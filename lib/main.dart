@@ -121,6 +121,57 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.info_outline, size: 26),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFF2A2B44),
+                  title: const Text(
+                    'App Info',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Backend URL:',
+                        style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        AppConfig.API_BASE_URL,
+                        style: const TextStyle(color: Color(0xFFF72585), fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'App Version: ${AppConfig.APP_VERSION}',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Debug Mode: ${AppConfig.isDebugMode ? "ON" : "OFF"}',
+                        style: TextStyle(
+                          color: AppConfig.isDebugMode ? Colors.green : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(color: Color(0xFFF72585)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.notifications_outlined, size: 26),
             onPressed: () {},
           ),
@@ -197,14 +248,21 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
         homeData = data['data'];
         isLoading = false;
       });
+      AppConfig.printDebug('Home data loaded successfully');
     } catch (e) {
       setState(() => isLoading = false);
+      AppConfig.printError('Failed to load home data: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading home data: $e'),
             backgroundColor: Colors.red[600],
             duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: fetchHomeData,
+            ),
           ),
         );
       }
@@ -214,8 +272,58 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFFF72585)),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Color(0xFFF72585)),
+            const SizedBox(height: 16),
+            Text(
+              'Loading home data...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    if (homeData == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'No data available',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Please check your backend connection',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: fetchHomeData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF72585),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       );
     }
 
@@ -283,15 +391,41 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
-                children: const [
-                  Icon(Icons.whatshot, color: Color(0xFFF72585), size: 28),
-                  SizedBox(width: 12),
-                  Text(
+                children: [
+                  const Icon(Icons.whatshot, color: Color(0xFFF72585), size: 28),
+                  const SizedBox(width: 12),
+                  const Text(
                     'Ongoing Anime',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (homeData?['ongoing_anime'] as List?)?.isNotEmpty == true
+                          ? Colors.green.withOpacity(0.2)
+                          : Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: (homeData?['ongoing_anime'] as List?)?.isNotEmpty == true
+                            ? Colors.green
+                            : Colors.orange,
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      '${(homeData?['ongoing_anime'] as List?)?.length ?? 0}',
+                      style: TextStyle(
+                        color: (homeData?['ongoing_anime'] as List?)?.isNotEmpty == true
+                            ? Colors.green
+                            : Colors.orange,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -373,17 +507,33 @@ class _OngoingAnimePageState extends State<OngoingAnimePage> {
     try {
       final data = await ApiService.fetchOngoingAnime(page: currentPage);
       setState(() {
-        animeList = data['data']['ongoingAnimeData'] ?? data['data'] ?? [];
+        // Handle different possible data structures from backend
+        if (data['data'] is List) {
+          animeList = data['data'];
+        } else if (data['data']['ongoingAnimeData'] != null) {
+          animeList = data['data']['ongoingAnimeData'];
+        } else if (data['data']['ongoing_anime'] != null) {
+          animeList = data['data']['ongoing_anime'];
+        } else {
+          animeList = data['data'] ?? [];
+        }
         isLoading = false;
       });
+      AppConfig.printDebug('Ongoing anime loaded: ${animeList.length} items');
     } catch (e) {
       setState(() => isLoading = false);
+      AppConfig.printError('Failed to load ongoing anime: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading ongoing anime: $e'),
             backgroundColor: Colors.red[600],
             duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: fetchOngoingAnime,
+            ),
           ),
         );
       }
@@ -393,8 +543,63 @@ class _OngoingAnimePageState extends State<OngoingAnimePage> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFFF72585)),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: Color(0xFFF72585)),
+            const SizedBox(height: 16),
+            Text(
+              'Loading ongoing anime...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    if (animeList.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Ongoing Anime'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.movie_outlined, color: Colors.grey, size: 64),
+              const SizedBox(height: 16),
+              const Text(
+                'No ongoing anime found',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Check your backend data',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: fetchOngoingAnime,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF72585),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -443,17 +648,33 @@ class _SearchAnimePageState extends State<SearchAnimePage> {
     try {
       final data = await ApiService.searchAnime(keyword);
       setState(() {
-        searchResults = data['search_results'] ?? data['data'] ?? [];
+        // Handle different possible data structures from backend
+        if (data['data'] is List) {
+          searchResults = data['data'];
+        } else if (data['data']['search_results'] != null) {
+          searchResults = data['data']['search_results'];
+        } else if (data['search_results'] != null) {
+          searchResults = data['search_results'];
+        } else {
+          searchResults = data['data'] ?? [];
+        }
         isLoading = false;
       });
+      AppConfig.printDebug('Search completed: ${searchResults.length} results for "$keyword"');
     } catch (e) {
       setState(() => isLoading = false);
+      AppConfig.printError('Search failed for "$keyword": $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Search error: $e'),
             backgroundColor: Colors.red[600],
             duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => searchAnime(keyword),
+            ),
           ),
         );
       }
@@ -604,7 +825,7 @@ class AnimeCard extends StatelessWidget {
                         ],
                       ),
                       child: Text(
-                        anime['current_episode'] ?? anime['episode_count'] ?? '',
+                        anime['current_episode'] ?? anime['episode_count'] ?? anime['latest_episode'] ?? 'N/A',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -638,7 +859,7 @@ class AnimeCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          anime['current_episode'] ?? anime['episode_count'] ?? '',
+                          anime['current_episode'] ?? anime['episode_count'] ?? anime['latest_episode'] ?? 'N/A',
                           style: const TextStyle(
                             color: Color(0xFFF72585),
                             fontSize: 12,
@@ -761,9 +982,9 @@ class AnimeCardHorizontal extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  if (anime['current_episode'] != null)
+                  if (anime['current_episode'] != null || anime['latest_episode'] != null)
                     Text(
-                      anime['current_episode'],
+                      anime['current_episode'] ?? anime['latest_episode'] ?? '',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Color(0xFFF72585),
@@ -842,9 +1063,9 @@ class AnimeListTile extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ] else if (anime['current_episode'] != null)
+              ] else if (anime['current_episode'] != null || anime['latest_episode'] != null)
                 Text(
-                  anime['current_episode'],
+                  anime['current_episode'] ?? anime['latest_episode'] ?? '',
                   style: const TextStyle(
                     color: Color(0xFFF72585),
                     fontSize: 13,
@@ -893,20 +1114,28 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
   }
 
   Future<void> fetchAnimeDetail() async {
+    setState(() => isLoading = true);
     try {
       final data = await ApiService.fetchAnimeDetail(widget.slug);
       setState(() {
         animeDetail = data['data'];
         isLoading = false;
       });
+      AppConfig.printDebug('Anime detail loaded for: ${widget.title}');
     } catch (e) {
       setState(() => isLoading = false);
+      AppConfig.printError('Failed to load anime detail for ${widget.slug}: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading anime details: $e'),
             backgroundColor: Colors.red[600],
             duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: fetchAnimeDetail,
+            ),
           ),
         );
       }
@@ -1182,6 +1411,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       errorMessage = null;
     });
     try {
+      AppConfig.printDebug('Fetching episode detail for: ${widget.episodeSlug}');
       final data = await ApiService.fetchEpisodeDetail(widget.episodeSlug);
       
       setState(() {
@@ -1196,25 +1426,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         qualityUrls = ApiService.extractVideoSources(episodeDetail!);
         availableQualities = qualityUrls.keys.toList();
 
-        print('Final Available Qualities: $availableQualities');
-        print('Final Quality URLs: $qualityUrls');
+        AppConfig.printDebug('Available qualities: $availableQualities');
+        AppConfig.printDebug('Quality URLs count: ${qualityUrls.length}');
 
         // Set default quality using API service helper
         if (availableQualities.isNotEmpty) {
           selectedQuality = ApiService.getPreferredQuality(availableQualities);
           
           if (qualityUrls.containsKey(selectedQuality)) {
-            print('Initializing player with quality: $selectedQuality');
+            AppConfig.printDebug('Initializing player with quality: $selectedQuality');
             initVideoPlayer(qualityUrls[selectedQuality]!);
           } else {
             setState(() {
               errorMessage = 'No valid video URL found for $selectedQuality';
             });
+            AppConfig.printError('No valid URL for quality: $selectedQuality');
           }
         } else {
           setState(() {
-            errorMessage = 'No video sources available from backend';
+            errorMessage = 'No video sources available from backend. Please check if the episode data contains video_sources, download_urls, or stream_urls.';
           });
+          AppConfig.printError('No video sources found in episode data');
         }
       });
     } catch (e) {
@@ -1222,12 +1454,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         isLoading = false;
         errorMessage = 'Error fetching episode: $e';
       });
+      AppConfig.printError('Episode fetch failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
             backgroundColor: Colors.red[600],
             duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: fetchEpisodeDetail,
+            ),
           ),
         );
       }
@@ -1235,7 +1473,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void initVideoPlayer(String url) {
-    print('Initializing video with URL: $url'); // Debug: Log video URL
+    AppConfig.printDebug('Initializing video player with URL: ${url.substring(0, 50)}...');
     try {
       _videoController?.dispose();
       _chewieController?.dispose();
@@ -1535,7 +1773,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           ],
         ),
         body: isLoading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFF72585)))
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFFF72585)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loading episode...',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.episodeTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              )
             : errorMessage != null
                 ? Center(
                     child: Column(
@@ -1543,12 +1806,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       children: [
                         const Icon(Icons.error, color: Colors.red, size: 50),
                         const SizedBox(height: 16),
-                        Text(
-                          errorMessage!,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
-                          textAlign: TextAlign.center,
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.symmetric(horizontal: 20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2B44),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.red.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            errorMessage!,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 20),
                         ElevatedButton(
                           onPressed: fetchEpisodeDetail,
                           style: ElevatedButton.styleFrom(
