@@ -7,12 +7,23 @@ import 'package:shimmer/shimmer.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
 import 'package:better_player/better_player.dart';
+import 'services/api_service.dart';
+import 'config/app_config.dart';
 
 void main() {
+  // Print setup instructions in debug mode
+  if (AppConfig.isDebugMode) {
+    AppConfig.printInfo('Starting AnimeHub Flutter App');
+    AppConfig.printInfo('Backend URL: ${AppConfig.API_BASE_URL}');
+    print('\n' + '='*50);
+    RailwaySetupInstructions.printInstructions();
+    print('='*50 + '\n');
+  }
+  
   runApp(const AnimeApp());
 }
 
-const String BASE_URL = 'https://www.sankavollerei.com/anime';
+// Note: API URLs are now managed in services/api_service.dart
 
 class AnimeApp extends StatelessWidget {
   const AnimeApp({Key? key}) : super(key: key);
@@ -20,17 +31,17 @@ class AnimeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AnimeHub',
+      title: AppConfig.APP_NAME,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primaryColor: const Color(0xFF4A4E69),
-        scaffoldBackgroundColor: const Color(0xFF22223B),
-        cardColor: const Color(0xFF2A2B44),
+        primaryColor: Color(AppConfig.PRIMARY_COLOR),
+        scaffoldBackgroundColor: Color(AppConfig.BACKGROUND_COLOR),
+        cardColor: Color(AppConfig.CARD_COLOR),
         colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF4A4E69),
-          secondary: const Color(0xFFF72585),
-          surface: const Color(0xFF2A2B44),
-          background: const Color(0xFF22223B),
+          primary: Color(AppConfig.PRIMARY_COLOR),
+          secondary: Color(AppConfig.SECONDARY_COLOR),
+          surface: Color(AppConfig.CARD_COLOR),
+          background: Color(AppConfig.BACKGROUND_COLOR),
           onPrimary: Colors.white,
           onSecondary: Colors.white,
           onSurface: Colors.white,
@@ -181,21 +192,19 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
   Future<void> fetchHomeData() async {
     setState(() => isLoading = true);
     try {
-      final response = await http.get(Uri.parse('$BASE_URL/home'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          homeData = data['data'];
-          isLoading = false;
-        });
-      }
+      final data = await ApiService.fetchHomeData();
+      setState(() {
+        homeData = data['data'];
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Error loading home data: $e'),
             backgroundColor: Colors.red[600],
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -362,21 +371,20 @@ class _OngoingAnimePageState extends State<OngoingAnimePage> {
   Future<void> fetchOngoingAnime() async {
     setState(() => isLoading = true);
     try {
-      final response = await http.get(
-        Uri.parse('$BASE_URL/ongoing?page=$currentPage'),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          animeList = data['data']['ongoingAnimeData'] ?? [];
-          isLoading = false;
-        });
-      }
+      final data = await ApiService.fetchOngoingAnime(page: currentPage);
+      setState(() {
+        animeList = data['data']['ongoingAnimeData'] ?? data['data'] ?? [];
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[600]),
+          SnackBar(
+            content: Text('Error loading ongoing anime: $e'),
+            backgroundColor: Colors.red[600],
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -433,21 +441,20 @@ class _SearchAnimePageState extends State<SearchAnimePage> {
     
     setState(() => isLoading = true);
     try {
-      final response = await http.get(
-        Uri.parse('$BASE_URL/search/$keyword'),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          searchResults = data['search_results'] ?? [];
-          isLoading = false;
-        });
-      }
+      final data = await ApiService.searchAnime(keyword);
+      setState(() {
+        searchResults = data['search_results'] ?? data['data'] ?? [];
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[600]),
+          SnackBar(
+            content: Text('Search error: $e'),
+            backgroundColor: Colors.red[600],
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -887,23 +894,20 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
 
   Future<void> fetchAnimeDetail() async {
     try {
-      final response = await http.get(
-        Uri.parse('$BASE_URL/anime/${widget.slug}'),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          animeDetail = data['search_results'] != null 
-              ? data['search_results'][0] 
-              : data['data'];
-          isLoading = false;
-        });
-      }
+      final data = await ApiService.fetchAnimeDetail(widget.slug);
+      setState(() {
+        animeDetail = data['data'];
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red[600]),
+          SnackBar(
+            content: Text('Error loading anime details: $e'),
+            backgroundColor: Colors.red[600],
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -1178,61 +1182,41 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       errorMessage = null;
     });
     try {
-      final response = await http.get(
-        Uri.parse('$BASE_URL/episode/${widget.episodeSlug}'),
-        // Add headers if required by API
-        // headers: {'Authorization': 'Bearer YOUR_TOKEN'},
-      );
-      print('Episode API Response: ${response.body}'); // Debug: Log full response
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          episodeDetail = data['data'];
-          isLoading = false;
+      final data = await ApiService.fetchEpisodeDetail(widget.episodeSlug);
+      
+      setState(() {
+        episodeDetail = data['data'];
+        isLoading = false;
 
-          // Process available qualities
-          if (episodeDetail?['download_urls'] != null) {
-            final downloads = episodeDetail!['download_urls'];
-            if (downloads['mp4'] != null) {
-              for (var quality in downloads['mp4']) {
-                String resolution = quality['resolution'];
-                availableQualities.add(resolution);
-                if (quality['urls'] != null && quality['urls'].isNotEmpty) {
-                  qualityUrls[resolution] = quality['urls'][0]['url'];
-                }
-              }
-            }
-            print('Available Quality URLs: $qualityUrls'); // Debug: Log URLs
+        // Clear previous data
+        availableQualities.clear();
+        qualityUrls.clear();
 
-            // Set default quality (prefer 720p)
-            if (availableQualities.isNotEmpty) {
-              selectedQuality = availableQualities.contains('720p')
-                  ? '720p'
-                  : availableQualities[0];
-              if (qualityUrls.containsKey(selectedQuality)) {
-                initVideoPlayer(qualityUrls[selectedQuality]!);
-              } else {
-                setState(() {
-                  errorMessage = 'No valid video URL found for $selectedQuality';
-                });
-              }
-            } else {
-              setState(() {
-                errorMessage = 'No video qualities available';
-              });
-            }
+        // Extract video sources using the API service
+        qualityUrls = ApiService.extractVideoSources(episodeDetail!);
+        availableQualities = qualityUrls.keys.toList();
+
+        print('Final Available Qualities: $availableQualities');
+        print('Final Quality URLs: $qualityUrls');
+
+        // Set default quality using API service helper
+        if (availableQualities.isNotEmpty) {
+          selectedQuality = ApiService.getPreferredQuality(availableQualities);
+          
+          if (qualityUrls.containsKey(selectedQuality)) {
+            print('Initializing player with quality: $selectedQuality');
+            initVideoPlayer(qualityUrls[selectedQuality]!);
           } else {
             setState(() {
-              errorMessage = 'No download URLs provided by API';
+              errorMessage = 'No valid video URL found for $selectedQuality';
             });
           }
-        });
-      } else {
-        setState(() {
-          isLoading = false;
-          errorMessage = 'Failed to load episode: HTTP ${response.statusCode}';
-        });
-      }
+        } else {
+          setState(() {
+            errorMessage = 'No video sources available from backend';
+          });
+        }
+      });
     } catch (e) {
       setState(() {
         isLoading = false;
@@ -1243,6 +1227,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           SnackBar(
             content: Text('Error: $e'),
             backgroundColor: Colors.red[600],
+            duration: const Duration(seconds: 4),
           ),
         );
       }
