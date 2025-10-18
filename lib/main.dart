@@ -10,6 +10,122 @@ import 'package:better_player/better_player.dart';
 import 'services/api_service.dart';
 import 'config/app_config.dart';
 
+// Helpers to adapt varying backend response shapes to the UI
+class BackendAdapter {
+  static Map<String, dynamic> _asMap(dynamic value) =>
+      value is Map<String, dynamic> ? value : <String, dynamic>{};
+
+  static String _string(dynamic value) => value == null ? '' : value.toString();
+
+  static String titleOf(dynamic item) {
+    final map = _asMap(item);
+    return _string(map['title'] ?? map['name'] ?? map['anime_title'] ?? '');
+  }
+
+  static String posterOf(dynamic item) {
+    final map = _asMap(item);
+    return _string(
+      map['poster'] ?? map['image'] ?? map['thumbnail'] ?? map['cover'] ?? '',
+    );
+  }
+
+  static String slugOf(dynamic item) {
+    final map = _asMap(item);
+    return _string(map['slug'] ?? map['anime_slug'] ?? map['id'] ?? '');
+  }
+
+  static String episodeLabelOf(dynamic item) {
+    final map = _asMap(item);
+    return _string(
+      map['current_episode'] ??
+          map['currentEpisode'] ??
+          map['episode_count'] ??
+          map['episodes'] ??
+          map['episode'] ??
+          '',
+    );
+  }
+
+  static String ratingOf(dynamic item) {
+    final map = _asMap(item);
+    final rating = map['rating'] ?? map['score'] ?? map['rate'];
+    if (rating == null) return '';
+    if (rating is num) {
+      final bool isWhole = rating % 1 == 0;
+      return isWhole ? rating.toStringAsFixed(0) : rating.toStringAsFixed(1);
+    }
+    return rating.toString();
+  }
+
+  static int? episodeCountOf(Map<String, dynamic>? detail) {
+    if (detail == null) return null;
+    final dynamic value =
+        detail['episode_count'] ?? detail['episodeCount'] ?? detail['episodes'];
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static String synopsisOf(Map<String, dynamic>? detail) {
+    if (detail == null) return '';
+    return _string(
+      detail['synopsis'] ?? detail['description'] ?? detail['overview'] ?? '',
+    );
+  }
+
+  static List episodesFromDetail(Map<String, dynamic>? detail) {
+    if (detail == null) return const [];
+    final candidates = [
+      detail['episode_lists'],
+      detail['episodes'],
+      detail['episodeList'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate is List) return candidate;
+    }
+    return const [];
+  }
+
+  static String episodeTitleOf(dynamic episode) {
+    final map = _asMap(episode);
+    return _string(map['episode'] ?? map['title'] ?? map['name'] ?? map['label']);
+  }
+
+  static String episodeSlugOf(dynamic episode) {
+    final map = _asMap(episode);
+    return _string(map['slug'] ?? map['episode_slug'] ?? map['id'] ?? '');
+  }
+
+  static List ongoingFromHome(dynamic payload) {
+    final map = _asMap(payload);
+    for (final key in const [
+      'ongoingAnimeData',
+      'ongoing_anime',
+      'ongoing',
+      'ongoingAnime',
+      'results',
+    ]) {
+      final value = map[key];
+      if (value is List) return value;
+    }
+    return const [];
+  }
+
+  static List completeFromHome(dynamic payload) {
+    final map = _asMap(payload);
+    for (final key in const [
+      'completeAnimeData',
+      'complete_anime',
+      'complete',
+      'completeAnime',
+    ]) {
+      final value = map[key];
+      if (value is List) return value;
+    }
+    return const [];
+  }
+}
+
 void main() {
   // Print setup instructions in debug mode
   if (AppConfig.isDebugMode) {
@@ -219,6 +335,11 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
       );
     }
 
+    final List<dynamic> ongoingList =
+        BackendAdapter.ongoingFromHome(homeData);
+    final List<dynamic> completeList =
+        BackendAdapter.completeFromHome(homeData);
+
     return RefreshIndicator(
       onRefresh: fetchHomeData,
       color: const Color(0xFFF72585),
@@ -318,9 +439,9 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
             height: 290,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: (homeData?['ongoing_anime'] as List?)?.length ?? 0,
+              itemCount: ongoingList.length,
               itemBuilder: (context, index) {
-                final anime = homeData!['ongoing_anime'][index];
+                final anime = ongoingList[index];
                 return AnimeCardHorizontal(anime: anime);
               },
             ),
@@ -341,9 +462,7 @@ class _HomeAnimePageState extends State<HomeAnimePage> {
             ],
           ),
           const SizedBox(height: 16),
-          ...(homeData?['complete_anime'] as List? ?? []).map((anime) => 
-            AnimeListTile(anime: anime)
-          ).toList(),
+          ...completeList.map((anime) => AnimeListTile(anime: anime)).toList(),
         ],
       ),
     );
@@ -443,7 +562,17 @@ class _SearchAnimePageState extends State<SearchAnimePage> {
     try {
       final data = await ApiService.searchAnime(keyword);
       setState(() {
-        searchResults = data['search_results'] ?? data['data'] ?? [];
+        final payload = data['data'] ?? data;
+        if (payload is Map<String, dynamic>) {
+          searchResults = (payload['search_results'] ??
+                  payload['results'] ??
+                  payload['items'] ??
+                  []) as List<dynamic>;
+        } else if (payload is List) {
+          searchResults = payload;
+        } else {
+          searchResults = [];
+        }
         isLoading = false;
       });
     } catch (e) {
@@ -545,8 +674,8 @@ class AnimeCard extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (context) => AnimeDetailPage(
-              slug: anime['slug'] ?? '',
-              title: anime['title'] ?? '',
+              slug: BackendAdapter.slugOf(anime),
+              title: BackendAdapter.titleOf(anime),
             ),
           ),
         );
@@ -572,7 +701,7 @@ class AnimeCard extends StatelessWidget {
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                     child: CachedNetworkImage(
-                      imageUrl: anime['poster'] ?? '',
+                      imageUrl: BackendAdapter.posterOf(anime),
                       fit: BoxFit.cover,
                       width: double.infinity,
                       placeholder: (context, url) => Shimmer.fromColors(
@@ -604,7 +733,7 @@ class AnimeCard extends StatelessWidget {
                         ],
                       ),
                       child: Text(
-                        anime['current_episode'] ?? anime['episode_count'] ?? '',
+                        BackendAdapter.episodeLabelOf(anime),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -622,7 +751,7 @@ class AnimeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    anime['title'] ?? '',
+                    BackendAdapter.titleOf(anime),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -638,7 +767,7 @@ class AnimeCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          anime['current_episode'] ?? anime['episode_count'] ?? '',
+                          BackendAdapter.episodeLabelOf(anime),
                           style: const TextStyle(
                             color: Color(0xFFF72585),
                             fontSize: 12,
@@ -671,8 +800,8 @@ class AnimeCardHorizontal extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (context) => AnimeDetailPage(
-              slug: anime['slug'] ?? '',
-              title: anime['title'] ?? '',
+              slug: BackendAdapter.slugOf(anime),
+              title: BackendAdapter.titleOf(anime),
             ),
           ),
         );
@@ -700,7 +829,7 @@ class AnimeCardHorizontal extends StatelessWidget {
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                     child: CachedNetworkImage(
-                      imageUrl: anime['poster'] ?? '',
+                      imageUrl: BackendAdapter.posterOf(anime),
                       fit: BoxFit.cover,
                       width: double.infinity,
                       placeholder: (context, url) => Shimmer.fromColors(
@@ -714,7 +843,7 @@ class AnimeCardHorizontal extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (anime['current_episode'] != null)
+                  if (BackendAdapter.episodeLabelOf(anime).isNotEmpty)
                     Positioned(
                       top: 10,
                       left: 10,
@@ -751,7 +880,7 @@ class AnimeCardHorizontal extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    anime['title'] ?? '',
+                    BackendAdapter.titleOf(anime),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -761,9 +890,9 @@ class AnimeCardHorizontal extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  if (anime['current_episode'] != null)
+                  if (BackendAdapter.episodeLabelOf(anime).isNotEmpty)
                     Text(
-                      anime['current_episode'],
+                      BackendAdapter.episodeLabelOf(anime),
                       style: const TextStyle(
                         fontSize: 11,
                         color: Color(0xFFF72585),
@@ -800,7 +929,7 @@ class AnimeListTile extends StatelessWidget {
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: CachedNetworkImage(
-            imageUrl: anime['poster'] ?? '',
+            imageUrl: BackendAdapter.posterOf(anime),
             width: 60,
             height: 80,
             fit: BoxFit.cover,
@@ -818,7 +947,7 @@ class AnimeListTile extends StatelessWidget {
           ),
         ),
         title: Text(
-          anime['title'] ?? '',
+          BackendAdapter.titleOf(anime),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -831,20 +960,20 @@ class AnimeListTile extends StatelessWidget {
           padding: const EdgeInsets.only(top: 6),
           child: Row(
             children: [
-              if (anime['rating'] != null) ...[
+              if (BackendAdapter.ratingOf(anime).isNotEmpty) ...[
                 const Icon(Icons.star, color: Colors.amber, size: 18),
                 const SizedBox(width: 6),
                 Text(
-                  anime['rating'],
+                  BackendAdapter.ratingOf(anime),
                   style: const TextStyle(
                     color: Colors.amber,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ] else if (anime['current_episode'] != null)
+              ] else if (BackendAdapter.episodeLabelOf(anime).isNotEmpty)
                 Text(
-                  anime['current_episode'],
+                  BackendAdapter.episodeLabelOf(anime),
                   style: const TextStyle(
                     color: Color(0xFFF72585),
                     fontSize: 13,
@@ -860,8 +989,8 @@ class AnimeListTile extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (context) => AnimeDetailPage(
-                slug: anime['slug'] ?? '',
-                title: anime['title'] ?? '',
+                slug: BackendAdapter.slugOf(anime),
+                title: BackendAdapter.titleOf(anime),
               ),
             ),
           );
@@ -896,7 +1025,7 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
     try {
       final data = await ApiService.fetchAnimeDetail(widget.slug);
       setState(() {
-        animeDetail = data['data'];
+        animeDetail = (data['data'] as Map?)?.cast<String, dynamic>();
         isLoading = false;
       });
     } catch (e) {
@@ -944,7 +1073,7 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
                       fit: StackFit.expand,
                       children: [
                         CachedNetworkImage(
-                          imageUrl: animeDetail?['poster'] ?? '',
+                        imageUrl: BackendAdapter.posterOf(animeDetail),
                           fit: BoxFit.cover,
                           placeholder: (context, url) => Shimmer.fromColors(
                             baseColor: Colors.grey[700]!,
@@ -994,13 +1123,13 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (animeDetail?['rating'] != null)
+                              if (BackendAdapter.ratingOf(animeDetail).isNotEmpty)
                                 Row(
                                   children: [
                                     const Icon(Icons.star, color: Colors.amber, size: 24),
                                     const SizedBox(width: 12),
                                     Text(
-                                      'Rating: ${animeDetail!['rating']}',
+                                      'Rating: ${BackendAdapter.ratingOf(animeDetail)}',
                                       style: const TextStyle(
                                         color: Colors.amber,
                                         fontSize: 18,
@@ -1009,14 +1138,14 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
                                     ),
                                   ],
                                 ),
-                              if (animeDetail?['episode_count'] != null) ...[
+                              if (BackendAdapter.episodeCountOf(animeDetail) != null) ...[
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
                                     const Icon(Icons.movie_filter, color: Color(0xFFF72585), size: 24),
                                     const SizedBox(width: 12),
                                     Text(
-                                      'Episodes: ${animeDetail!['episode_count']}',
+                                      'Episodes: ${BackendAdapter.episodeCountOf(animeDetail)}',
                                       style: const TextStyle(
                                         fontSize: 16,
                                         color: Colors.white,
@@ -1047,7 +1176,9 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
                             border: Border.all(color: Colors.grey[700]!),
                           ),
                           child: Text(
-                            animeDetail?['synopsis'] ?? 'No synopsis available',
+                            BackendAdapter.synopsisOf(animeDetail) == ''
+                                ? 'No synopsis available'
+                                : BackendAdapter.synopsisOf(animeDetail),
                             style: TextStyle(
                               color: Colors.white70,
                               height: 1.6,
@@ -1065,7 +1196,8 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        ...((animeDetail?['episode_lists'] ?? []) as List)
+                        ...BackendAdapter
+                            .episodesFromDetail(animeDetail)
                             .map((ep) => EpisodeCard(episode: ep))
                             .toList(),
                       ],
@@ -1112,7 +1244,7 @@ class EpisodeCard extends StatelessWidget {
           child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
         ),
         title: Text(
-          episode['episode'] ?? '',
+          BackendAdapter.episodeTitleOf(episode),
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 15,
@@ -1125,8 +1257,8 @@ class EpisodeCard extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (context) => VideoPlayerPage(
-                episodeSlug: episode['slug'] ?? '',
-                episodeTitle: episode['episode'] ?? '',
+                episodeSlug: BackendAdapter.episodeSlugOf(episode),
+                episodeTitle: BackendAdapter.episodeTitleOf(episode),
               ),
             ),
           );
