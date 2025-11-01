@@ -7,6 +7,11 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# ⭐ FIX: Add permissions for creating releases
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build-ios:
     runs-on: macos-13
@@ -32,10 +37,17 @@ jobs:
         with:
           xcode-version: '15.0'
 
+      - name: 🍎 Install CocoaPods Dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+          cd ..
+
       - name: 🍎 Build iOS App (Unsigned)
         run: |
           # Clean previous builds
           flutter clean
+          flutter pub get
           
           # Build iOS without code signing
           flutter build ios --release --no-codesign
@@ -62,7 +74,7 @@ jobs:
 
       - name: 🎉 Create GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-v1.0.${{ github.run_number }}
           name: Suki Anime iOS v1.0.${{ github.run_number }}
@@ -93,9 +105,11 @@ jobs:
             - Keep AltServer running for auto-refresh
             - Enable Background Refresh in AltStore app
             
-            ### 📝 Changelog:
+            ### 📝 Build Info:
             - Build number: ${{ github.run_number }}
             - Commit: ${{ github.sha }}
+            - Flutter: 3.27.1
+            - iOS Min: 12.0
             
             ---
             
