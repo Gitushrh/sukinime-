@@ -1,4 +1,6 @@
+// screens/detail_anime_screen.dart - OPTIMIZED (Fetch inside video player)
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,425 +11,289 @@ import '../widgets/anime_video_player.dart';
 class DetailAnimeScreen extends StatefulWidget {
   final String animeId;
 
-  const DetailAnimeScreen({Key? key, required this.animeId}) : super(key: key);
+  const DetailAnimeScreen({super.key, required this.animeId});
 
   @override
   State<DetailAnimeScreen> createState() => _DetailAnimeScreenState();
 }
 
 class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
+  final ScrollController _scrollController = ScrollController();
+  
+  int _displayedEpisodes = 20;
+  bool _isLoadingMore = false;
+  bool _isExpanded = false;
+  bool _showTitle = false;
+
+  // ✅ Access to video player cache
+  static Map<String, List<dynamic>> get episodeCache => 
+      _DetailAnimeScreenState._internalCache;
+  static final Map<String, List<dynamic>> _internalCache = {};
+
   @override
   void initState() {
     super.initState();
+    
+    if (kDebugMode) {
+      print('\n${'='*70}');
+      print('DETAIL SCREEN INITIALIZED');
+      print('   AnimeId: "${widget.animeId}"');
+      print('${'='*70}\n');
+    }
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<AnimeProvider>(context, listen: false)
-          .fetchAnimeDetail(widget.animeId);
+      final provider = Provider.of<AnimeProvider>(context, listen: false);
+      provider.fetchAnimeDetail(widget.animeId);
+    });
+    
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients) {
+      final showTitle = _scrollController.offset > 250;
+      if (showTitle != _showTitle) {
+        setState(() {
+          _showTitle = showTitle;
+        });
+      }
+    }
+    
+    if (_scrollController.position.pixels >= 
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreEpisodes();
+    }
+  }
+
+  void _loadMoreEpisodes() {
+    final provider = Provider.of<AnimeProvider>(context, listen: false);
+    final totalEpisodes = provider.currentAnime?.episodes.length ?? 0;
+    
+    if (_isLoadingMore || _displayedEpisodes >= totalEpisodes) return;
+    
+    setState(() {
+      _isLoadingMore = true;
+    });
+    
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        setState(() {
+          _displayedEpisodes = (_displayedEpisodes + 20).clamp(0, totalEpisodes);
+          _isLoadingMore = false;
+        });
+      }
     });
   }
 
-  void _playEpisode(Episode episode) async {
+  // ✅ SIMPLIFIED: Navigate directly to video player
+  Future<void> _playEpisode(Episode episode) async {
     final provider = Provider.of<AnimeProvider>(context, listen: false);
     
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF1a1f3a),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(color: Colors.deepPurple),
-              const SizedBox(height: 16),
-              Text(
-                'Mencari streaming links...',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                episode.number,
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[400],
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    // Fetch streaming links
-    await provider.fetchStreamingLinks(episode.url);
-    
     if (!mounted) return;
-    Navigator.of(context).pop(); // Close loading dialog
 
-    if (provider.currentStreamLinks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Tidak ada link untuk ${episode.number}'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Filter playable links (MP4/HLS only)
-    final playableLinks = provider.currentStreamLinks
-        .where((link) => link.type == 'mp4' || link.type == 'hls')
-        .toList();
-    
-    // Fallback to iframe if no direct links
-    final iframeLinks = provider.currentStreamLinks
-        .where((link) => link.type == 'iframe')
-        .toList();
-
-    List<StreamLink> availableLinks = playableLinks.isNotEmpty 
-        ? playableLinks 
-        : iframeLinks;
-
-    if (availableLinks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Tidak ada link streaming yang tersedia'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      );
-      return;
-    }
-
-    StreamLink? selectedLink;
-
-    // If only 1 link, use it directly
-    if (availableLinks.length == 1) {
-      selectedLink = availableLinks.first;
-    } else {
-      // Show server & quality selection dialog
-      selectedLink = await showDialog<StreamLink>(
-        context: context,
-        builder: (context) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1a1f3a),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.deepPurple.withValues(alpha: 0.3),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple.withValues(alpha: 0.2),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.video_library,
-                        color: Colors.deepPurple[300],
-                        size: 24,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Pilih Server & Kualitas',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                        color: Colors.grey[400],
-                        iconSize: 20,
-                      ),
-                    ],
-                  ),
-                ),
-                // Links list
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: availableLinks.length,
-                    itemBuilder: (context, index) {
-                      final link = availableLinks[index];
-                      return _buildServerTile(context, link);
-                    },
-                  ),
-                ),
-                // Info footer
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.blue[300],
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Pilih server dengan kualitas terbaik',
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[400],
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (selectedLink == null) return;
-
-    // Play video with pod_player
-    if (!mounted) return;
-    Navigator.of(context).push(
+    // ✅ Navigate immediately - let video player handle loading
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => AnimeVideoPlayer(
-          streamLink: selectedLink!,
-          episodeTitle: '${provider.currentAnime?.title ?? ''} - ${episode.number}',
+          episodeToLoad: episode,
+          animeTitle: provider.currentAnime?.title ?? '',
+          allEpisodes: provider.currentAnime?.episodes ?? [],
+          animePoster: provider.currentAnime?.poster,
+          onEpisodeCached: (episodeUrl) {
+            // ✅ Sync cache with detail screen
+            if (mounted) {
+              setState(() {
+                _internalCache[episodeUrl] = [];
+              });
+            }
+          },
         ),
       ),
     );
+    
+    // ✅ Refresh UI when returning to detail screen
+    if (mounted) {
+      setState(() {});
+    }
   }
 
-  Widget _buildServerTile(BuildContext context, StreamLink link) {
-    IconData icon;
-    Color iconColor;
-    String typeLabel;
-    
-    if (link.type == 'hls') {
-      icon = Icons.stream;
-      iconColor = Colors.green;
-      typeLabel = 'HLS Stream';
-    } else if (link.type == 'mp4') {
-      icon = Icons.play_circle_filled;
-      iconColor = Colors.blue;
-      typeLabel = 'MP4 Direct';
-    } else {
-      icon = Icons.web;
-      iconColor = Colors.orange;
-      typeLabel = 'Iframe';
-    }
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            iconColor.withValues(alpha: 0.1),
-            iconColor.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: iconColor.withValues(alpha: 0.3),
-          width: 1.5,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => Navigator.of(context).pop(link),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // Icon container
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 24),
-                ),
-                const SizedBox(width: 16),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        link.provider,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: iconColor.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              typeLabel,
-                              style: GoogleFonts.poppins(
-                                color: iconColor,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          if (link.quality != null && link.quality != 'auto') ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.deepPurple.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.hd,
-                                    color: Colors.deepPurple[300],
-                                    size: 12,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    link.quality!,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.deepPurple[300],
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Arrow icon
-                Icon(
-                  Icons.arrow_forward_ios,
-                  color: iconColor.withValues(alpha: 0.5),
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  String _extractEpisodeNumber(String title) {
+    final match = RegExp(r'Episode\s*(\d+)', caseSensitive: false).firstMatch(title);
+    return match?.group(1) ?? title;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0e27),
+      backgroundColor: const Color(0xFF0F0F0F),
       body: Consumer<AnimeProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(
-                color: Colors.deepPurple,
-              ),
-            );
-          }
-
-          if (provider.currentAnime == null) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    provider.errorMessage ?? 'Anime tidak ditemukan',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: Colors.grey[400],
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(
+                      color: const Color(0xFF6366F1),
+                      strokeWidth: 2.5,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Kembali'),
+                  Text(
+                    'Loading',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: Colors.white38,
+                    ),
                   ),
                 ],
               ),
             );
           }
 
+          if (provider.currentAnime == null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.error_outline_rounded,
+                        size: 36,
+                        color: const Color(0xFFEF4444),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Anime Not Found',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            provider.fetchAnimeDetail(widget.animeId);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6366F1),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            'Retry',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A1A1A),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'Back',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           final anime = provider.currentAnime!;
+          final allEpisodes = anime.episodes;
+          final sortedEpisodes = allEpisodes.reversed.toList();
+          final episodesToShow = sortedEpisodes.take(_displayedEpisodes).toList();
 
           return CustomScrollView(
+            controller: _scrollController,
             slivers: [
               SliverAppBar(
-                expandedHeight: 300,
+                expandedHeight: 320,
                 pinned: true,
-                backgroundColor: const Color(0xFF1a1f3a),
+                backgroundColor: const Color(0xFF1A1A1A),
+                elevation: 0,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _showTitle 
+                        ? Colors.transparent 
+                        : Colors.black.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                    onPressed: () => Navigator.of(context).pop(),
+                    color: Colors.white,
+                  ),
+                ),
+                title: AnimatedOpacity(
+                  opacity: _showTitle ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    anime.title,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      letterSpacing: -0.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: Stack(
                     fit: StackFit.expand,
@@ -436,23 +302,31 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
                         imageUrl: anime.poster,
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
-                          color: Colors.grey[800],
+                          color: const Color(0xFF1A1A1A),
                         ),
                         errorWidget: (context, url, error) => Container(
-                          color: Colors.grey[800],
-                          child: const Icon(Icons.image_not_supported),
+                          color: const Color(0xFF1A1A1A),
+                          child: Icon(
+                            Icons.image_not_supported_rounded,
+                            color: Colors.white24,
+                            size: 48,
+                          ),
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              const Color(0xFF0a0e27).withValues(alpha: 0.7),
-                              const Color(0xFF0a0e27),
-                            ],
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withOpacity(0.2),
+                                Colors.black.withOpacity(0.5),
+                                const Color(0xFF0F0F0F).withOpacity(0.9),
+                                const Color(0xFF0F0F0F),
+                              ],
+                              stops: const [0.0, 0.5, 0.85, 1.0],
+                            ),
                           ),
                         ),
                       ),
@@ -460,83 +334,121 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
                   ),
                 ),
               ),
+              
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         anime.title,
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                        style: GoogleFonts.inter(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
+                          height: 1.2,
+                          letterSpacing: -0.8,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                       _buildInfoSection(anime),
                       const SizedBox(height: 24),
                       Text(
-                        'Sinopsis',
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        'Synopsis',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                           color: Colors.white,
+                          letterSpacing: -0.3,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        anime.synopsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey[300],
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 10),
+                      _buildSynopsisSection(anime.synopsis),
+                      const SizedBox(height: 28),
                       Row(
                         children: [
-                          Icon(
-                            Icons.play_circle_filled,
-                            color: Colors.deepPurple[300],
-                            size: 24,
-                          ),
-                          const SizedBox(width: 8),
                           Text(
-                            'Episode',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                            'Episodes',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                               color: Colors.white,
+                              letterSpacing: -0.3,
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
+                              horizontal: 8,
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.deepPurple.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12),
+                              color: const Color(0xFF6366F1).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFF6366F1).withOpacity(0.3),
+                              ),
                             ),
                             child: Text(
-                              '${anime.episodes.length}',
-                              style: GoogleFonts.poppins(
-                                color: Colors.deepPurple[300],
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                              '${allEpisodes.length}',
+                              style: GoogleFonts.inter(
+                                color: const Color(0xFF818CF8),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      _buildEpisodeList(anime.episodes),
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
+              ),
+              
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.75,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (index < episodesToShow.length) {
+                        final episode = episodesToShow[index];
+                        final episodeNum = _extractEpisodeNumber(episode.number);
+                        return _buildEpisodeCard(episode, episodeNum);
+                      }
+                      return null;
+                    },
+                    childCount: episodesToShow.length,
+                  ),
+                ),
+              ),
+              
+              if (_isLoadingMore)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: const Color(0xFF6366F1),
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 32),
               ),
             ],
           );
@@ -549,10 +461,10 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1a1f3a),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: Colors.deepPurple.withValues(alpha: 0.3),
+          color: Colors.white.withOpacity(0.08),
         ),
       ),
       child: Column(
@@ -566,9 +478,9 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
                   flex: 2,
                   child: Text(
                     entry.key,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: Colors.grey[400],
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: Colors.white54,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -577,9 +489,10 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
                   flex: 3,
                   child: Text(
                     entry.value,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
                       color: Colors.white,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ),
@@ -591,168 +504,110 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
     );
   }
 
-  Widget _buildEpisodeList(List<Episode> episodes) {
-    if (episodes.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            children: [
-              Icon(
-                Icons.video_library_outlined,
-                size: 64,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Tidak ada episode tersedia',
-                style: GoogleFonts.poppins(
-                  color: Colors.grey[400],
-                  fontSize: 14,
-                ),
-              ),
-            ],
+  Widget _buildSynopsisSection(String synopsis) {
+    final maxLines = 4;
+    final needsExpansion = synopsis.split('\n').length > maxLines || synopsis.length > 300;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          synopsis,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: Colors.white70,
+            height: 1.6,
+            letterSpacing: -0.1,
           ),
+          maxLines: _isExpanded ? null : maxLines,
+          overflow: _isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
         ),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: episodes.length,
-      itemBuilder: (context, index) {
-        final episode = episodes[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF1a1f3a),
-                const Color(0xFF1a1f3a).withValues(alpha: 0.8),
+        if (needsExpansion) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            },
+            child: Row(
+              children: [
+                Text(
+                  _isExpanded ? 'Show Less' : 'Read More',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF818CF8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                  color: const Color(0xFF818CF8),
+                  size: 18,
+                ),
               ],
             ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.deepPurple.withValues(alpha: 0.2),
-            ),
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => _playEpisode(episode),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    // Episode thumbnail/icon
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.deepPurple.withValues(alpha: 0.3),
-                            Colors.deepPurple.withValues(alpha: 0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Icon(
-                            Icons.play_circle_filled,
-                            color: Colors.deepPurple[300],
-                            size: 36,
-                          ),
-                          Positioned(
-                            bottom: 4,
-                            right: 4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.deepPurple,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '${episodes.length - index}',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Episode info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            episode.number,
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.calendar_today,
-                                size: 12,
-                                color: Colors.grey[500],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                episode.date,
-                                style: GoogleFonts.poppins(
-                                  color: Colors.grey[400],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Play button
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.deepPurple.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.play_arrow,
-                        color: Colors.deepPurple[300],
-                        size: 24,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+        ],
+      ],
     );
+  }
+
+  Widget _buildEpisodeCard(Episode episode, String episodeNum) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _playEpisode(episode),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: const Color(0xFF818CF8),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  episodeNum,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    letterSpacing: -0.2,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  
+  // ✅ Check if episode is cached
+  bool _isEpisodeCached(String episodeUrl) {
+    // This will be synced with video player cache
+    return _internalCache.containsKey(episodeUrl);
   }
 }
