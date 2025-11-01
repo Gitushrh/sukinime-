@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/anime_provider.dart';
+import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -40,7 +41,11 @@ class MyApp extends StatelessWidget {
             background: const Color(0xFF0a0e27),
           ),
         ),
-        home: const HomeScreen(),
+        routes: {
+          '/': (context) => const SplashScreen(),
+          '/home': (context) => const HomeScreen(),
+        },
+        home: const SplashScreen(),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pod_player/pod_player.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lottie/lottie.dart';
 import '../models/anime_model.dart';
 
 class AnimeVideoPlayer extends StatefulWidget {
@@ -28,24 +29,17 @@ class _AnimeVideoPlayerState extends State<AnimeVideoPlayer> {
     super.initState();
     _initializePlayer();
     
-    // Lock to landscape mode
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
     
-    // Hide system UI
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   void _initializePlayer() {
     try {
       final httpHeaders = _getHttpHeaders();
-
-      print('🎬 Initializing player...');
-      print('   URL: ${widget.streamLink.url.substring(0, 80)}...');
-      print('   Type: ${widget.streamLink.type}');
-      print('   Headers: ${httpHeaders.keys.join(', ')}');
 
       _controller = PodPlayerController(
         playVideoFrom: PlayVideoFrom.network(
@@ -64,10 +58,8 @@ class _AnimeVideoPlayerState extends State<AnimeVideoPlayer> {
             setState(() {
               _isPlayerReady = true;
             });
-            print('✅ Player initialized successfully');
           }
         }).catchError((error) {
-          print('❌ Player initialization error: $error');
           if (mounted) {
             setState(() {
               _errorMessage = 'Error loading video: ${error.toString()}';
@@ -75,7 +67,6 @@ class _AnimeVideoPlayerState extends State<AnimeVideoPlayer> {
           }
         });
     } catch (e) {
-      print('❌ Exception during player setup: $e');
       setState(() {
         _errorMessage = 'Error initializing player: ${e.toString()}';
       });
@@ -216,23 +207,10 @@ class _AnimeVideoPlayerState extends State<AnimeVideoPlayer> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 80,
-                  height: 80,
-                  child: CircularProgressIndicator(
-                    color: Colors.deepPurple,
-                    strokeWidth: 4,
-                  ),
-                ),
-                Icon(
-                  Icons.play_circle_outline,
-                  color: Colors.deepPurple.withValues(alpha: 0.5),
-                  size: 40,
-                ),
-              ],
+            Lottie.asset(
+              'assets/animations/loading.json',
+              width: 120,
+              height: 120,
             ),
             const SizedBox(height: 32),
             Text(
@@ -256,63 +234,9 @@ class _AnimeVideoPlayerState extends State<AnimeVideoPlayer> {
                 maxLines: 2,
               ),
             ),
-            const SizedBox(height: 24),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 40),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.deepPurple.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildLoadingInfo(
-                    Icons.cloud_download,
-                    widget.streamLink.type.toUpperCase(),
-                    Colors.blue,
-                  ),
-                  const SizedBox(width: 24),
-                  _buildLoadingInfo(
-                    Icons.dns,
-                    widget.streamLink.provider,
-                    Colors.green,
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildLoadingInfo(IconData icon, String text, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 20),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          text,
-          style: GoogleFonts.poppins(
-            color: Colors.white.withValues(alpha: 0.9),
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 
