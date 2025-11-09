@@ -1,22 +1,18 @@
-// services/poster_loader_service.dart - FIXED: URL CLEANING + CACHING
-// ✅ Uses the same endpoint as detail_anime_screen.dart: /anime/:animeId
+// services/poster_loader_service.dart - UPDATED BASE URL
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class PosterLoaderService {
-  final String baseUrl = 'https://anime-backend-tau.vercel.app/';
+  // ✅ NEW BASE URL
+  final String baseUrl = 'https://anime-backend-xi.vercel.app/anime/';
   late Dio _dio;
   
-  // Memory cache
   final Map<String, String?> _posterCache = {};
-  
-  // Queue to batch requests
   final List<String> _queue = [];
   bool _isProcessing = false;
   
-  // Cache expiry (24 hours)
   static const int _cacheExpiryHours = 24;
   static const String _cacheKey = 'poster_cache_v1';
   static const String _cacheTimeKey = 'poster_cache_time_v1';
@@ -34,16 +30,13 @@ class PosterLoaderService {
       validateStatus: (status) => status != null && status < 500,
     ));
     
-    // Load cache from storage
     _loadCacheFromStorage();
   }
 
-  /// ✅ FIX: Clean poster URL by removing -Episode-X suffix
   String _cleanPosterUrl(String url) {
     if (url.isEmpty || !url.contains('samehadaku')) return url;
     
     try {
-      // Pattern: -Episode-123.jpg → .jpg
       final cleaned = url.replaceAll(RegExp(r'-Episode-\d+(\.[a-z]+)$'), r'$1');
       
       if (cleaned != url && kDebugMode) {
@@ -59,7 +52,6 @@ class PosterLoaderService {
     }
   }
 
-  /// Load cache from SharedPreferences
   Future<void> _loadCacheFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -89,7 +81,6 @@ class PosterLoaderService {
     }
   }
 
-  /// Save cache to SharedPreferences
   Future<void> _saveCacheToStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -105,7 +96,6 @@ class PosterLoaderService {
     }
   }
 
-  /// Clear storage cache
   Future<void> _clearStorageCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -118,29 +108,24 @@ class PosterLoaderService {
   }
 
   Future<String?> getPosterUrl(String animeId) async {
-    // Validation
     if (animeId.isEmpty || animeId.trim().isEmpty) {
       if (kDebugMode) print('⚠️ Empty animeId');
       return null;
     }
     
-    // Check memory cache
     if (_posterCache.containsKey(animeId)) {
       if (kDebugMode) print('✅ Cache hit: $animeId');
       return _posterCache[animeId];
     }
     
-    // Add to queue
     if (!_queue.contains(animeId)) {
       _queue.add(animeId);
     }
     
-    // Start processing
     if (!_isProcessing) {
       _processQueue();
     }
     
-    // Wait for result (max 5 seconds)
     int retries = 0;
     while (!_posterCache.containsKey(animeId) && retries < 50) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -168,24 +153,20 @@ class PosterLoaderService {
       }
       
       try {
-        // ✅ FETCH FROM DETAIL ANIME ENDPOINT (detail_anime_screen.dart uses this)
-        final response = await _dio.get('/anime/$animeId');
+        // ✅ NEW ENDPOINT
+        final response = await _dio.get('anime/$animeId');
         
         if (response.statusCode == 200) {
           final responseData = response.data;
           
-          if (responseData is Map && 
-              (responseData['status'] == 'Ok' || responseData['status'] == 'success')) {
+          if (responseData is Map && responseData['data'] != null) {
             final animeData = responseData['data'];
             
-            // ✅ Try to get poster from detail endpoint
             String? posterUrl = animeData['poster']?.toString();
             
-            // ✅ CLEAN THE URL (remove -Episode-X suffix)
             if (posterUrl != null && posterUrl.isNotEmpty) {
               posterUrl = _cleanPosterUrl(posterUrl);
               
-              // Validate URL
               if (posterUrl.startsWith('http') && 
                   !posterUrl.contains('placehold.co')) {
                 _posterCache[animeId] = posterUrl;
@@ -205,7 +186,7 @@ class PosterLoaderService {
               _posterCache[animeId] = null;
             }
           } else {
-            if (kDebugMode) print('⚠️ Invalid response status for $animeId');
+            if (kDebugMode) print('⚠️ Invalid response for $animeId');
             _posterCache[animeId] = null;
           }
         } else {
@@ -228,11 +209,9 @@ class PosterLoaderService {
         if (kDebugMode) print('⚠️ Unexpected error for $animeId: ${e.toString().substring(0, 100)}');
       }
       
-      // Small delay to avoid overwhelming server
       await Future.delayed(const Duration(milliseconds: 250));
     }
     
-    // Save to storage after processing
     if (successCount > 0) {
       await _saveCacheToStorage();
     }
@@ -248,7 +227,6 @@ class PosterLoaderService {
     _isProcessing = false;
   }
 
-  /// Get cache stats
   Map<String, int> getCacheStats() {
     final successful = _posterCache.values.where((v) => v != null).length;
     final failed = _posterCache.values.where((v) => v == null).length;
@@ -261,7 +239,6 @@ class PosterLoaderService {
     };
   }
 
-  /// Clear all caches
   Future<void> clearCache() async {
     _posterCache.clear();
     _queue.clear();
@@ -269,7 +246,6 @@ class PosterLoaderService {
     if (kDebugMode) print('🧹 All caches cleared');
   }
 
-  /// Force refresh cache (clear and reload)
   Future<void> refreshCache() async {
     await clearCache();
     if (kDebugMode) print('🔄 Cache refreshed');

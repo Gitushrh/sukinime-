@@ -61,49 +61,52 @@
 	</dict>
 	
 	<!-- ========== MEDIA PERMISSIONS ========== -->
-	<!-- Media Library (opsional, tapi bagus punya) -->
+	<!-- Media Library -->
 	<key>NSAppleMusicUsageDescription</key>
 	<string>This app needs access to media library for video playback</string>
 	
-	<!-- Photo Library (jika ada fitur screenshot/save) -->
+	<!-- Photo Library -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Save anime screenshots to your photo library</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save anime screenshots to your photo library</string>
 	
 	<!-- ========== BACKGROUND MODES ========== -->
-	<!-- Background Audio (untuk PiP dan background playback) -->
+	<!-- Background Audio + PiP Support -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>fetch</string>
 	</array>
 	
+	<!-- ========== PICTURE IN PICTURE ========== -->
+	<!-- Enable PiP for iOS -->
+	<key>AVInitialRouteSharingPolicy</key>
+	<string>LongFormAudio</string>
+	
 	<!-- ========== FLUTTER SPECIFIC ========== -->
-	<!-- Enable embedded views (untuk platform views) -->
+	<!-- Enable embedded views -->
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 	
 	<!-- ========== PRIVACY DESCRIPTIONS ========== -->
-	<!-- Local Network (untuk streaming dari local sources) -->
+	<!-- Local Network -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs local network access to stream video content</string>
 	
-	<!-- Bonjour Services (optional, tapi untuk network discovery) -->
+	<!-- Bonjour Services -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_http._tcp</string>
 	</array>
 	
 	<!-- ========== STATUS BAR ========== -->
-	<!-- Hide status bar saat fullscreen video -->
 	<key>UIStatusBarHidden</key>
 	<false/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	
-	<!-- ========== FILE SHARING (Optional) ========== -->
-	<!-- Enable iTunes File Sharing jika mau share files -->
+	<!-- ========== FILE SHARING ========== -->
 	<key>UIFileSharingEnabled</key>
 	<false/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

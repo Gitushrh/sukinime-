@@ -105,14 +105,7 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
           animeTitle: provider.currentAnime?.title ?? '',
           allEpisodes: provider.currentAnime?.episodes ?? [],
           animePoster: provider.currentAnime?.poster,
-          onEpisodeCached: (episodeUrl) {
-            // ✅ Sync cache with detail screen
-            if (mounted) {
-              setState(() {
-                _internalCache[episodeUrl] = [];
-              });
-            }
-          },
+          
         ),
       ),
     );
@@ -569,13 +562,13 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
           onTap: () => _playEpisode(episode),
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8), // ✅ Reduced from 10
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 32, // ✅ Reduced from 36
+                  height: 32,
                   decoration: BoxDecoration(
                     color: const Color(0xFF6366F1).withOpacity(0.15),
                     shape: BoxShape.circle,
@@ -583,19 +576,23 @@ class _DetailAnimeScreenState extends State<DetailAnimeScreen> {
                   child: Icon(
                     Icons.play_arrow_rounded,
                     color: const Color(0xFF818CF8),
-                    size: 20,
+                    size: 18, // ✅ Reduced from 20
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  episodeNum,
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    letterSpacing: -0.2,
+                const SizedBox(height: 6), // ✅ Reduced from 8
+                Flexible( // ✅ Added Flexible
+                  child: Text(
+                    episodeNum,
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12, // ✅ Reduced from 13
+                      letterSpacing: -0.2,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1, // ✅ Added
+                    overflow: TextOverflow.ellipsis, // ✅ Added
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),

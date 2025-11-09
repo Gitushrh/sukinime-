@@ -417,16 +417,46 @@ class AnimeDetail {
     String animeId = json['slug'] ?? json['animeId'] ?? json['id'] ?? '';
     animeId = animeId.replaceAll('/', '').trim();
 
-    // Parse episodes
-    final episodesList = json['episodeList'] ?? [];
+    // ✅ FIX: Parse episodes dengan multiple field names
     final episodes = <Episode>[];
     
+    // Try berbagai field names yang mungkin digunakan API
+    final episodesList = json['episode_lists'] ?? 
+                        json['episodeList'] ?? 
+                        json['episodes'] ?? 
+                        [];
+    
+    if (kDebugMode) {
+      print('🎬 Parsing episodes from: ${episodesList.runtimeType}');
+      if (episodesList is List) {
+        print('   Found ${episodesList.length} episodes');
+        // ✅ CRITICAL: Print first episode structure
+        if (episodesList.isNotEmpty) {
+          print('   📋 First episode structure:');
+          print('      ${episodesList[0]}');
+        }
+      }
+    }
+    
     if (episodesList is List && episodesList.isNotEmpty) {
-      for (var ep in episodesList) {
+      for (var i = 0; i < episodesList.length; i++) {
         try {
+          final ep = episodesList[i];
+          if (kDebugMode) print('   Parsing episode $i: ${ep.runtimeType}');
           episodes.add(Episode.fromJson(ep));
         } catch (e) {
-          if (kDebugMode) print('⚠️ Failed to parse episode: $e');
+          if (kDebugMode) print('   ⚠️ Failed to parse episode $i: $e');
+        }
+      }
+    }
+    
+    if (kDebugMode) {
+      print('✅ Successfully parsed ${episodes.length} episodes');
+      if (episodes.isNotEmpty) {
+        print('   🎯 Sample URLs:');
+        final sampleCount = episodes.length < 3 ? episodes.length : 3;
+        for (var i = 0; i < sampleCount; i++) {
+          print('      Ep ${episodes[i].episodeNumber}: "${episodes[i].url}"');
         }
       }
     }
@@ -536,34 +566,62 @@ class Episode {
     this.episodeNumber,
   });
 
-  
-
   factory Episode.fromJson(Map<String, dynamic> json) {
+    if (kDebugMode) {
+      print('🔍 Episode.fromJson: $json');
+    }
+    
     String episodeTitle = '';
     int? episodeNum;
     
-    if (json['title'] != null) {
+    // ✅ PRIORITY 1: episode_number field (most reliable)
+    if (json['episode_number'] != null) {
+      if (json['episode_number'] is int) {
+        episodeNum = json['episode_number'];
+      } else {
+        episodeNum = int.tryParse(json['episode_number'].toString());
+      }
+      episodeTitle = 'Episode $episodeNum';
+      if (kDebugMode) print('   📍 episode_number: $episodeNum');
+    }
+    // Fallback: title field
+    else if (json['title'] != null) {
       final titleValue = json['title'];
       episodeNum = int.tryParse(titleValue.toString());
-      episodeTitle = 'Episode ${titleValue}';
+      episodeTitle = 'Episode $titleValue';
+      if (kDebugMode) print('   📍 from title: $episodeNum');
     }
     
     String episodeUrl = '';
     
-    if (json['episodeId'] != null && json['episodeId'].toString().isNotEmpty) {
+    // ✅ PRIORITY 1: slug field (most reliable)
+    if (json['slug'] != null && json['slug'].toString().isNotEmpty) {
+      episodeUrl = json['slug'].toString();
+      if (kDebugMode) print('   ✅ URL from slug: $episodeUrl');
+    }
+    // Fallback: episodeId
+    else if (json['episodeId'] != null && json['episodeId'].toString().isNotEmpty) {
       episodeUrl = json['episodeId'].toString();
-    } 
+      if (kDebugMode) print('   ✅ URL from episodeId: $episodeUrl');
+    }
+    // Fallback: extract from href
     else if (json['href'] != null && json['href'].toString().isNotEmpty) {
       final href = json['href'].toString();
       final match = RegExp(r'/episode/([^/]+)').firstMatch(href);
       if (match != null) {
         episodeUrl = match.group(1)!;
+        if (kDebugMode) print('   ✅ URL from href: $episodeUrl');
       }
     }
     
+    // Clean URL
     episodeUrl = episodeUrl.trim().replaceAll(RegExp(r'^/+|/+$'), '');
     
-    String episodeDate = json['samehadakuUrl'] ?? '';
+    String episodeDate = json['otakudesu_url'] ?? json['samehadakuUrl'] ?? '';
+    
+    if (kDebugMode) {
+      print('   🎯 FINAL: Ep $episodeNum -> "$episodeUrl"');
+    }
     
     return Episode(
       number: episodeTitle.isNotEmpty ? episodeTitle : 'Episode $episodeNum',

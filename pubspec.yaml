@@ -1,3 +1,4 @@
+
 name: coba_anime
 description: "Suki."
 publish_to: 'none'
@@ -34,6 +35,7 @@ dependencies:
   
   # WebView untuk fallback
   webview_flutter: ^4.4.2
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:

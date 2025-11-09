@@ -1,4 +1,4 @@
-// widgets/anime_card.dart - Enhanced Card with Better Typography
+// widgets/anime_card.dart - UPDATED BASE URL
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -14,8 +14,10 @@ class AnimeCard extends StatefulWidget {
 
   static final Map<String, String?> _posterCache = {};
   static final Map<String, int> _failureCount = {};
+  
+  // ✅ NEW BASE URL
   static final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'https://anime-backend-tau.vercel.app/',
+    baseUrl: 'https://anime-backend-xi.vercel.app/anime/',
     connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 8),
     headers: {
@@ -26,9 +28,9 @@ class AnimeCard extends StatefulWidget {
   ));
 
   static DateTime? _lastRequestTime;
-  static const _minRequestInterval = Duration(milliseconds: 800); // Increased delay
+  static const _minRequestInterval = Duration(milliseconds: 800);
   static int _concurrentRequests = 0;
-  static const _maxConcurrentRequests = 3; // Limit concurrent requests
+  static const _maxConcurrentRequests = 3;
 
   static void clearCache() {
     _posterCache.clear();
@@ -76,12 +78,11 @@ class AnimeCard extends StatefulWidget {
     }
 
     final failures = _failureCount[animeId] ?? 0;
-    if (failures >= 2) { // Reduced from 3 to 2 attempts
+    if (failures >= 2) {
       _posterCache[animeId] = null;
       return null;
     }
 
-    // Wait if too many concurrent requests
     while (_concurrentRequests >= _maxConcurrentRequests) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
@@ -90,13 +91,12 @@ class AnimeCard extends StatefulWidget {
       _concurrentRequests++;
       await _waitForThrottle();
 
-      final response = await _dio.get('/anime/$animeId');
+      final response = await _dio.get('anime/$animeId');
       
       if (response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && 
-            (responseData['status'] == 'Ok' || responseData['status'] == 'success')) {
+        if (responseData is Map && responseData['data'] != null) {
           final animeData = responseData['data'];
           String? posterUrl = animeData['poster']?.toString();
           
@@ -240,7 +240,6 @@ class _AnimeCardState extends State<AnimeCard> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Poster Image
               if (hasValidPoster)
                 CachedNetworkImage(
                   imageUrl: _posterUrl!,
@@ -252,7 +251,6 @@ class _AnimeCardState extends State<AnimeCard> {
               else
                 _buildPlaceholder(_isLoading && !isCached),
               
-              // Enhanced Gradient Overlay
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -268,7 +266,6 @@ class _AnimeCardState extends State<AnimeCard> {
                 ),
               ),
               
-              // Episodes Badge (top-right)
               if (widget.anime.totalEpisodes != null && 
                   widget.anime.id.isNotEmpty)
                 Positioned(
@@ -318,7 +315,6 @@ class _AnimeCardState extends State<AnimeCard> {
                   ),
                 ),
               
-              // Bottom Info with Enhanced Typography
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -339,7 +335,6 @@ class _AnimeCardState extends State<AnimeCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Title with better contrast
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 2),
                         child: Text(

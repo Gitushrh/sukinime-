@@ -1,10 +1,10 @@
-// services/anime_service.dart - FIXED: Safe anime list parsing
+// services/anime_service.dart - FIXED ALL PARSING ISSUES
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/anime_model.dart';
 
 class AnimeService {
-  final String baseUrl = 'https://anime-backend-tau.vercel.app/';
+  final String baseUrl = 'https://anime-backend-xi.vercel.app/anime/';
   late Dio _dio;
 
   AnimeService() {
@@ -72,7 +72,7 @@ class AnimeService {
     return null;
   }
 
-  // ✅ FIXED: Safe anime list parser with proper error handling
+  // ✅ FIXED: Parsing yang lebih fleksibel
   List<Anime> _parseAnimeList(dynamic data) {
     if (kDebugMode) {
       print('\n🔍 PARSING ANIME LIST');
@@ -86,28 +86,50 @@ class AnimeService {
     
     List<dynamic> animeListRaw = [];
     
-    if (data is Map && data['data'] != null) {
-      final dataContent = data['data'];
-      
-      if (dataContent is Map && dataContent['animeList'] is List) {
-        animeListRaw = dataContent['animeList'] as List;
-      } else if (dataContent is List) {
-        animeListRaw = dataContent;
+    // ✅ NEW: Cek berbagai struktur data yang mungkin
+    if (data is Map) {
+      // Struktur 1: {data: {anime: [...]}}
+      if (data['data'] is Map && data['data']['anime'] is List) {
+        animeListRaw = data['data']['anime'] as List;
+        if (kDebugMode) print('   📦 Found: data.anime structure');
       }
-    } else if (data is Map && data['animeList'] is List) {
-      animeListRaw = data['animeList'] as List;
-    } else if (data is List) {
+      // Struktur 2: {data: {animeList: [...]}}
+      else if (data['data'] is Map && data['data']['animeList'] is List) {
+        animeListRaw = data['data']['animeList'] as List;
+        if (kDebugMode) print('   📦 Found: data.animeList structure');
+      }
+      // Struktur 3: {data: [..]} (direct array)
+      else if (data['data'] is List) {
+        animeListRaw = data['data'] as List;
+        if (kDebugMode) print('   📦 Found: data array structure');
+      }
+      // Struktur 4: {anime: [...]}
+      else if (data['anime'] is List) {
+        animeListRaw = data['anime'] as List;
+        if (kDebugMode) print('   📦 Found: anime array structure');
+      }
+      // Struktur 5: {animeList: [...]}
+      else if (data['animeList'] is List) {
+        animeListRaw = data['animeList'] as List;
+        if (kDebugMode) print('   📦 Found: animeList array structure');
+      }
+    } 
+    // Struktur 6: Direct array
+    else if (data is List) {
       animeListRaw = data;
+      if (kDebugMode) print('   📦 Found: direct array structure');
     }
     
     if (animeListRaw.isEmpty) {
-      if (kDebugMode) print('❌ Could not parse anime list');
+      if (kDebugMode) {
+        print('❌ Could not parse anime list');
+        print('   Available keys: ${data is Map ? data.keys.toList() : "N/A"}');
+      }
       return [];
     }
     
-    if (kDebugMode) print('✅ Found ${animeListRaw.length} anime');
+    if (kDebugMode) print('✅ Found ${animeListRaw.length} anime items');
     
-    // ✅ FIXED: Use indexed for loop to avoid type issues
     final result = <Anime>[];
     
     for (int index = 0; index < animeListRaw.length; index++) {
@@ -126,7 +148,6 @@ class AnimeService {
       } catch (e, stackTrace) {
         if (kDebugMode) {
           print('⚠️ Skip anime $index: $e');
-          // Only print first 2 lines of stack trace to avoid clutter
           final lines = stackTrace.toString().split('\n');
           if (lines.isNotEmpty) print('   ${lines[0]}');
         }
@@ -137,27 +158,28 @@ class AnimeService {
     return result;
   }
 
+  // HOME
   Future<Map<String, List<Anime>>> getHome() async {
     try {
       if (kDebugMode) print('\n🏠 Fetching home...');
       
-      final response = await _safeApiCall('/home');
+      final response = await _safeApiCall('home');
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
+        if (responseData is Map) {
           final data = responseData['data'];
           final result = <String, List<Anime>>{};
           
           if (data is Map) {
-            if (data['ongoing'] is List) {
-              result['ongoing'] = (data['ongoing'] as List)
+            if (data['ongoing_anime'] is List) {
+              result['ongoing'] = (data['ongoing_anime'] as List)
                   .map((e) => Anime.fromJson(e))
                   .toList();
             }
-            if (data['complete'] is List) {
-              result['complete'] = (data['complete'] as List)
+            if (data['complete_anime'] is List) {
+              result['complete'] = (data['complete_anime'] as List)
                   .map((e) => Anime.fromJson(e))
                   .toList();
             }
@@ -179,19 +201,26 @@ class AnimeService {
     }
   }
 
+  // RECENT ANIME
   Future<List<Anime>> getRecentAnime({int page = 1}) async {
     try {
       if (kDebugMode) print('\n📡 Fetching recent (page: $page)');
       
-      final response = await _safeApiCall('/recent', queryParameters: {'page': page});
+      final response = await _safeApiCall('home');
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
-          final animeList = _parseAnimeList(responseData);
-          if (kDebugMode) print('✅ Recent loaded: ${animeList.length} anime');
-          return animeList;
+        if (responseData is Map) {
+          final data = responseData['data'];
+          
+          if (data is Map && data['ongoing_anime'] is List) {
+            final animeList = (data['ongoing_anime'] as List)
+                .map((e) => Anime.fromJson(e))
+                .toList();
+            if (kDebugMode) print('✅ Recent loaded: ${animeList.length} anime');
+            return animeList;
+          }
         }
       }
       
@@ -202,6 +231,7 @@ class AnimeService {
     }
   }
 
+  // ✅ FIXED: Search with fallback
   Future<List<Anime>> searchAnime(String query, {int page = 1}) async {
     try {
       final trimmedQuery = query.trim();
@@ -209,41 +239,56 @@ class AnimeService {
       
       if (kDebugMode) print('\n🔍 Searching: $trimmedQuery');
       
-      final response = await _safeApiCall(
-        '/search',
-        queryParameters: {'q': trimmedQuery, 'page': page},
-      );
+      final response = await _safeApiCall('search/$trimmedQuery', maxRetries: 2);
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
+        if (responseData is Map) {
           final animeList = _parseAnimeList(responseData);
-          if (kDebugMode) print('✅ Search found ${animeList.length} results');
-          return animeList;
+          if (animeList.isNotEmpty) {
+            if (kDebugMode) print('✅ Search found ${animeList.length} results');
+            return animeList;
+          }
         }
       }
       
-      return [];
+      // ✅ FALLBACK: Search in home data
+      if (kDebugMode) print('⚠️ API search unavailable, using fallback search...');
+      
+      final homeData = await getHome();
+      final List<Anime> allAnime = [
+        ...?homeData['ongoing'],
+        ...?homeData['complete'],
+      ];
+      
+      if (kDebugMode) print('📊 Fallback: searching in ${allAnime.length} anime');
+      
+      final queryLower = trimmedQuery.toLowerCase();
+      final List<Anime> filtered = allAnime.where((anime) {
+        return anime.title.toLowerCase().contains(queryLower);
+      }).toList();
+      
+      if (kDebugMode) print('✅ Fallback search found ${filtered.length} results');
+      return filtered;
+      
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
       return [];
     }
   }
 
+  // ONGOING
   Future<List<Anime>> getOngoingAnime({int page = 1, String order = 'popular'}) async {
     try {
-      if (kDebugMode) print('\n📡 Fetching ongoing (page: $page, order: $order)');
+      if (kDebugMode) print('\n📡 Fetching ongoing (page: $page)');
       
-      final response = await _safeApiCall(
-        '/ongoing',
-        queryParameters: {'page': page, 'order': order},
-      );
+      final response = await _safeApiCall('ongoing-anime', queryParameters: {'page': page});
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'Ok') {
+        if (responseData is Map) {
           final animeList = _parseAnimeList(responseData);
           if (kDebugMode) print('✅ Ongoing loaded: ${animeList.length} anime');
           return animeList;
@@ -257,19 +302,17 @@ class AnimeService {
     }
   }
 
+  // COMPLETED
   Future<List<Anime>> getCompletedAnime({int page = 1, String order = 'latest'}) async {
     try {
-      if (kDebugMode) print('\n📡 Fetching completed (page: $page, order: $order)');
+      if (kDebugMode) print('\n📡 Fetching completed (page: $page)');
       
-      final response = await _safeApiCall(
-        '/completed',
-        queryParameters: {'page': page, 'order': order},
-      );
+      final response = await _safeApiCall('complete-anime/$page');
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'Ok') {
+        if (responseData is Map) {
           final animeList = _parseAnimeList(responseData);
           if (kDebugMode) print('✅ Completed loaded: ${animeList.length} anime');
           return animeList;
@@ -283,48 +326,21 @@ class AnimeService {
     }
   }
 
+  // POPULAR
   Future<List<Anime>> getPopularAnime({int page = 1}) async {
     try {
       if (kDebugMode) print('\n📡 Fetching popular (page: $page)');
-      
-      final response = await _safeApiCall('/popular', queryParameters: {'page': page});
-      
-      if (response != null && response.statusCode == 200) {
-        final responseData = response.data;
-        
-        if (responseData is Map && responseData['status'] == 'Ok') {
-          final animeList = _parseAnimeList(responseData);
-          if (kDebugMode) print('✅ Popular loaded: ${animeList.length} anime');
-          return animeList;
-        }
-      }
-      
-      return [];
+      return await getOngoingAnime(page: page);
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
       return [];
     }
   }
 
+  // MOVIES
   Future<List<Anime>> getMovies({int page = 1, String order = 'update'}) async {
     try {
-      if (kDebugMode) print('\n📡 Fetching movies (page: $page, order: $order)');
-      
-      final response = await _safeApiCall(
-        '/movies',
-        queryParameters: {'page': page, 'order': order},
-      );
-      
-      if (response != null && response.statusCode == 200) {
-        final responseData = response.data;
-        
-        if (responseData is Map && responseData['status'] == 'Ok') {
-          final animeList = _parseAnimeList(responseData);
-          if (kDebugMode) print('✅ Movies loaded: ${animeList.length} anime');
-          return animeList;
-        }
-      }
-      
+      if (kDebugMode) print('\n📡 Movies not available');
       return [];
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
@@ -332,121 +348,104 @@ class AnimeService {
     }
   }
 
+  // ✅ FIXED: All Anime List with fallback
   Future<List<Anime>> getAllAnimeList() async {
     try {
       if (kDebugMode) print('\n📚 Fetching anime list...');
       
-      final response = await _safeApiCall('/list');
+      // Try ongoing first
+      final response = await _safeApiCall('ongoing-anime', queryParameters: {'page': 1});
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
-          final data = responseData['data'];
-          
-          if (data is Map && data['list'] is List) {
-            final listGroups = data['list'] as List;
-            final allAnime = <Anime>[];
-            
-            for (var group in listGroups) {
-              if (group is Map && group['animeList'] is List) {
-                final animeList = group['animeList'] as List;
-                for (var anime in animeList) {
-                  try {
-                    allAnime.add(Anime.fromJson(anime));
-                  } catch (e) {
-                    if (kDebugMode) print('⚠️ Failed to parse anime: $e');
-                  }
-                }
-              }
-            }
-            
-            if (kDebugMode) print('✅ List loaded: ${allAnime.length} anime');
-            return allAnime;
+        if (responseData is Map) {
+          final animeList = _parseAnimeList(responseData);
+          if (animeList.isNotEmpty) {
+            if (kDebugMode) print('✅ List loaded: ${animeList.length} anime');
+            return animeList;
           }
         }
       }
       
-      if (kDebugMode) print('⚠️ List failed, trying fallback...');
-      final ongoing = await getOngoingAnime(page: 1);
-      final complete = await getCompletedAnime(page: 1);
+      // ✅ FALLBACK: Use home data
+      if (kDebugMode) print('⚠️ Using home data as fallback...');
+      final homeData = await getHome();
+      final List<Anime> allAnime = [
+        ...?homeData['ongoing'],
+        ...?homeData['complete'],
+      ];
       
-      return [...ongoing, ...complete];
+      if (kDebugMode) print('✅ Fallback loaded: ${allAnime.length} anime');
+      return allAnime;
+      
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
       return [];
     }
   }
 
+  // ✅ FIXED: Schedule with better error handling
   Future<Map<String, dynamic>> getSchedule() async {
     try {
       if (kDebugMode) print('\n📅 Fetching schedule...');
       
-      final response = await _safeApiCall('/schedule');
+      final response = await _safeApiCall('schedule', maxRetries: 1);
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
+        if (responseData is Map) {
           final data = responseData['data'];
           
-          if (data is Map && data['days'] is List) {
-            final daysList = data['days'] as List;
+          if (data is List) {
             final scheduleMap = <String, dynamic>{};
-            
-            for (var dayData in daysList) {
-              if (dayData is Map) {
-                final day = dayData['day'] ?? '';
-                final animeList = dayData['animeList'] ?? [];
-                if (day.isNotEmpty) {
-                  scheduleMap[day] = animeList;
-                }
+            for (var dayData in data) {
+              if (dayData is Map && dayData['day'] != null) {
+                scheduleMap[dayData['day']] = dayData['anime_list'] ?? [];
               }
             }
             
             if (kDebugMode) print('✅ Schedule loaded: ${scheduleMap.keys.length} days');
-            return scheduleMap;
-          }
-          
-          if (data is Map) {
-            if (kDebugMode) print('✅ Schedule loaded: ${data.keys.length} days');
-            return Map<String, dynamic>.from(data);
+            if (scheduleMap.isNotEmpty) return scheduleMap;
           }
         }
       }
       
+      // ✅ Return empty if unavailable
+      if (kDebugMode) print('⚠️ Schedule endpoint unavailable');
       return {};
+      
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
       return {};
     }
   }
 
+  // GENRES
   Future<List<Map<String, dynamic>>> getGenres() async {
     try {
       if (kDebugMode) print('\n📂 Fetching genres...');
       
-      final response = await _safeApiCall('/genres');
+      final response = await _safeApiCall('genre');
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'success') {
+        if (responseData is Map) {
           final data = responseData['data'];
           
           List genreData = [];
-          if (data is Map && data['genreList'] is List) {
-            genreData = data['genreList'] as List;
-          } else if (data is List) {
+          if (data is List) {
             genreData = data;
           }
           
           final genres = genreData.map((e) {
             return {
-              'id': e['genreId'] ?? e['slug'] ?? e['id'] ?? '',
-              'name': e['title'] ?? e['name'] ?? '',
-              'slug': e['genreId'] ?? e['slug'] ?? '',
-              'url': e['samehadakuUrl'] ?? e['url'] ?? '',
+              'id': e['slug'] ?? e['id'] ?? '',
+              'name': e['name'] ?? '',
+              'slug': e['slug'] ?? '',
+              'url': e['otakudesu_url'] ?? '',
             };
           }).toList();
           
@@ -462,38 +461,36 @@ class AnimeService {
     }
   }
 
-  // ✅ NEW: Return anime list WITH pagination info
+  // ✅ FIXED: Anime by Genre with pagination
   Future<Map<String, dynamic>> getAnimeByGenreWithPagination(String genreId, {int page = 1}) async {
     try {
       if (kDebugMode) print('\n📂 Fetching genre "$genreId" (page: $page)');
       
       final response = await _safeApiCall(
-        '/genres/$genreId',
+        'genre/$genreId',
         queryParameters: {'page': page},
       );
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && 
-            (responseData['status'] == 'success' || responseData['status'] == 'Ok')) {
+        if (responseData is Map) {
           final animeList = _parseAnimeList(responseData);
           
-          // ✅ Extract pagination info
           Map<String, dynamic> paginationInfo = {
             'currentPage': page,
             'hasNextPage': false,
             'totalPages': 1,
           };
           
-          if (responseData['pagination'] is Map) {
-            final pagination = responseData['pagination'];
+          if (responseData['data'] is Map && responseData['data']['pagination'] is Map) {
+            final pagination = responseData['data']['pagination'];
             paginationInfo = {
-              'currentPage': pagination['currentPage'] ?? page,
-              'hasNextPage': pagination['hasNextPage'] ?? false,
-              'totalPages': pagination['totalPages'] ?? 1,
-              'nextPage': pagination['nextPage'],
-              'prevPage': pagination['prevPage'],
+              'currentPage': pagination['current_page'] ?? page,
+              'hasNextPage': pagination['has_next_page'] ?? false,
+              'totalPages': pagination['last_visible_page'] ?? 1,
+              'nextPage': pagination['next_page'],
+              'prevPage': pagination['previous_page'],
             };
             
             if (kDebugMode) {
@@ -533,32 +530,15 @@ class AnimeService {
     }
   }
   
-  // Keep old method for backward compatibility
   Future<List<Anime>> getAnimeByGenre(String genreId, {int page = 1}) async {
     final result = await getAnimeByGenreWithPagination(genreId, page: page);
     return result['animes'] as List<Anime>;
   }
 
+  // BATCH LIST
   Future<List<Map<String, dynamic>>> getBatchList({int page = 1}) async {
     try {
-      if (kDebugMode) print('\n📦 Fetching batch list (page: $page)');
-      
-      final response = await _safeApiCall('/batch', queryParameters: {'page': page});
-      
-      if (response != null && response.statusCode == 200) {
-        final responseData = response.data;
-        
-        if (responseData is Map && responseData['status'] == 'Ok') {
-          final batchData = responseData['data'];
-          
-          if (batchData is List) {
-            final batches = batchData.map((e) => Map<String, dynamic>.from(e)).toList();
-            if (kDebugMode) print('✅ Found ${batches.length} batches');
-            return batches;
-          }
-        }
-      }
-      
+      if (kDebugMode) print('\n📦 Batch list not available');
       return [];
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
@@ -566,11 +546,12 @@ class AnimeService {
     }
   }
 
+  // ✅ FIXED: Anime Detail with better episode parsing
   Future<AnimeDetail?> getAnimeDetail(String animeId) async {
     try {
       if (kDebugMode) print('\n📺 Fetching detail: $animeId');
       
-      final response = await _safeApiCall('/anime/$animeId');
+      final response = await _safeApiCall('anime/$animeId');
       
       if (response == null) {
         if (kDebugMode) print('❌ Response is null');
@@ -594,12 +575,6 @@ class AnimeService {
         return null;
       }
       
-      final status = responseData['status'];
-      if (status != 'success' && status != 'Ok') {
-        if (kDebugMode) print('❌ Status is not success/Ok: $status');
-        return null;
-      }
-      
       final animeData = responseData['data'];
       
       if (animeData == null) {
@@ -612,30 +587,19 @@ class AnimeService {
         return null;
       }
       
-      final title = animeData['title'];
-      final english = animeData['english'];
-      final japanese = animeData['japanese'];
-      final synonyms = animeData['synonyms'];
-      
-      if (kDebugMode) {
-        print('📊 Title validation:');
-        print('   title: "$title"');
-        print('   english: "$english"');
-        print('   japanese: "$japanese"');
-        print('   synonyms: "$synonyms"');
-      }
-      
-      final hasValidTitle = (title != null && title.toString().trim().isNotEmpty) ||
-                           (english != null && english.toString().trim().isNotEmpty) ||
-                           (japanese != null && japanese.toString().trim().isNotEmpty) ||
-                           (synonyms != null && synonyms.toString().trim().isNotEmpty);
-      
-      if (!hasValidTitle) {
-        if (kDebugMode) print('❌ No valid title found in any field');
-        return null;
-      }
-      
       try {
+        // ✅ Debug: Print raw data structure
+        if (kDebugMode) {
+          print('📊 Raw anime data structure:');
+          print('   Keys: ${animeData.keys.toList()}');
+          if (animeData['episodeList'] != null) {
+            print('   episodeList type: ${animeData['episodeList'].runtimeType}');
+            if (animeData['episodeList'] is List) {
+              print('   episodeList length: ${(animeData['episodeList'] as List).length}');
+            }
+          }
+        }
+        
         final detail = AnimeDetail.fromJson(
           Map<String, dynamic>.from(animeData)
         );
@@ -644,11 +608,17 @@ class AnimeService {
           print('✅ AnimeDetail parsed successfully:');
           print('   Final title: "${detail.title}"');
           print('   Episodes: ${detail.episodes.length}');
+          if (detail.episodes.isEmpty && animeData['episodeList'] != null) {
+            print('   ⚠️ WARNING: Episodes were in API but failed to parse!');
+          }
         }
         
         return detail;
-      } catch (e) {
-        if (kDebugMode) print('❌ Failed to parse AnimeDetail: $e');
+      } catch (e, stackTrace) {
+        if (kDebugMode) {
+          print('❌ Failed to parse AnimeDetail: $e');
+          print('   Stack: ${stackTrace.toString().split('\n').take(3).join('\n')}');
+        }
         return null;
       }
       
@@ -658,117 +628,99 @@ class AnimeService {
     }
   }
 
+  // EPISODE DETAIL
+  Future<Map<String, dynamic>?> getEpisodeDetail(String episodeId) async {
+    try {
+      String cleanEpisodeId = episodeId.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+      
+      if (kDebugMode) print('🎬 SERVICE: Fetching episode detail for: $cleanEpisodeId');
+      
+      final response = await _safeApiCall('episode/$cleanEpisodeId', maxRetries: 3);
+      
+      if (response != null && response.statusCode == 200) {
+        final responseData = response.data;
+        
+        if (responseData is Map) {
+          final data = responseData['data'];
+          
+          if (data != null && data is Map) {
+            if (kDebugMode) {
+              print('✅ SERVICE: Episode data received');
+              print('   Available keys: ${data.keys.toList()}');
+            }
+            
+            return Map<String, dynamic>.from(data);
+          }
+        }
+      }
+      
+      if (kDebugMode) print('⚠️ SERVICE: Failed to get episode detail');
+      return null;
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        print('❌ SERVICE Error in getEpisodeDetail: $e');
+        print('   Stack: ${stackTrace.toString().split('\n').take(3).join('\n')}');
+      }
+      return null;
+    }
+  }
+
+  // STREAMING LINKS
   Future<List<StreamLink>> getStreamingLinks(String episodeUrl) async {
     try {
       if (kDebugMode) print('\n🔥 FETCHING STREAMING LINKS: $episodeUrl');
       
       String cleanEpisodeId = episodeUrl;
       
-      if (episodeUrl.startsWith('samehadaku/episode/')) {
-        cleanEpisodeId = episodeUrl.replaceFirst('samehadaku/episode/', '');
-        if (kDebugMode) print('🔧 Cleaned URL: $cleanEpisodeId');
-      }
-      
-      final response = await _safeApiCall('/episode/$cleanEpisodeId', maxRetries: 3);
+      final response = await _safeApiCall('episode/$cleanEpisodeId', maxRetries: 3);
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
         
-        if (responseData is Map && responseData['status'] == 'Ok') {
+        if (responseData is Map) {
           final data = responseData['data'];
           final List<StreamLink> allLinks = [];
           
-          // ✅ PRIORITY 1: Add defaultStreamingUrl FIRST (Blogger - fastest)
-          if (data['defaultStreamingUrl'] != null && 
-              data['defaultStreamingUrl'].toString().isNotEmpty) {
-            final defaultUrl = data['defaultStreamingUrl'].toString();
+          if (data['stream_url'] != null && data['stream_url'].toString().isNotEmpty) {
+            final streamUrl = data['stream_url'].toString();
             allLinks.add(StreamLink.fromJson({
-              'provider': 'Blogger Default',
-              'url': defaultUrl,
-              'type': defaultUrl.contains('.m3u8') ? 'hls' : 'mp4',
+              'provider': 'Desustream Default',
+              'url': streamUrl,
+              'type': streamUrl.contains('.m3u8') ? 'hls' : 'mp4',
               'quality': 'auto',
               'source': 'default',
-              'priority': 0, // Highest priority
+              'priority': 0,
             }));
-            if (kDebugMode) print('✅ Added defaultStreamingUrl: Blogger');
+            if (kDebugMode) print('✅ Added stream_url: Desustream');
           }
           
-          // ✅ PRIORITY 2: Add resolved_links (Pixeldrain, Krakenfiles, etc)
-          if (data['resolved_links'] != null && data['resolved_links'] is List) {
-            for (var linkData in data['resolved_links']) {
-              final provider = linkData['provider']?.toString().toLowerCase() ?? '';
-              
-              // Skip download-only providers
-              if (provider.contains('gofile') || 
-                  provider.contains('mediafire') ||
-                  provider.contains('acefile') ||
-                  provider.contains('mega')) {
-                continue;
-              }
-              
-              final url = linkData['url'] ?? '';
-              
-              // Skip duplicates
-              if (allLinks.any((l) => l.url == url)) {
-                continue;
-              }
-              
-              allLinks.add(StreamLink.fromJson({
-                'provider': linkData['provider'] ?? 'Unknown',
-                'url': url,
-                'type': linkData['type'] ?? 'mp4',
-                'quality': linkData['quality'] ?? 'auto',
-                'source': linkData['source'] ?? 'resolved',
-                'note': linkData['format'] != null ? '${linkData['format']}' : null,
-                'priority': linkData['priority'] ?? 99,
-              }));
-            }
+          if (data['download_urls'] != null && data['download_urls'] is Map) {
+            final downloadUrls = data['download_urls'] as Map;
             
-            if (kDebugMode) {
-              print('✅ Resolved links: ${allLinks.length - 1}'); // -1 for default url
-              final pixeldrain = allLinks.where((l) => l.source == 'pixeldrain').length;
-              final kraken = allLinks.where((l) => l.source == 'krakenfiles').length;
-              print('   💧 Pixeldrain: $pixeldrain');
-              print('   🐙 Krakenfiles: $kraken');
-            }
-          }
-          
-          // ✅ PRIORITY 3: Add stream_list if available
-          if (data['stream_list'] != null && data['stream_list'] is Map) {
-            final streamList = data['stream_list'] as Map;
-            streamList.forEach((quality, url) {
-              if (url != null && url.toString().startsWith('http')) {
-                final urlStr = url.toString();
-                if (!allLinks.any((l) => l.url == urlStr)) {
-                  allLinks.add(StreamLink.fromJson({
-                    'provider': 'Stream $quality',
-                    'url': urlStr,
-                    'type': urlStr.contains('.m3u8') ? 'hls' : 'mp4',
-                    'quality': quality.toString(),
-                    'source': 'api-quality',
-                    'priority': 50,
-                  }));
+            if (downloadUrls['mp4'] is List) {
+              for (var resolutionData in downloadUrls['mp4']) {
+                final resolution = resolutionData['resolution'] ?? 'auto';
+                final urls = resolutionData['urls'] as List? ?? [];
+                
+                for (var urlData in urls) {
+                  final provider = urlData['provider'] ?? 'Unknown';
+                  final url = urlData['url'] ?? '';
+                  
+                  if (url.isNotEmpty) {
+                    allLinks.add(StreamLink.fromJson({
+                      'provider': '$provider $resolution',
+                      'url': url,
+                      'type': 'mp4',
+                      'quality': resolution,
+                      'source': 'download',
+                      'priority': 50,
+                    }));
+                  }
                 }
               }
-            });
-          }
-          
-          // ✅ PRIORITY 4: Add main stream_url as fallback
-          if (data['stream_url'] != null) {
-            final streamUrl = data['stream_url'].toString();
-            if (streamUrl.isNotEmpty && !allLinks.any((l) => l.url == streamUrl)) {
-              allLinks.add(StreamLink.fromJson({
-                'provider': 'Main Stream',
-                'url': streamUrl,
-                'type': streamUrl.contains('.m3u8') ? 'hls' : 'mp4',
-                'quality': 'auto',
-                'source': 'api-main',
-                'priority': 90,
-              }));
             }
           }
           
-          // ✅ Sort by priority (0 = highest)
           allLinks.sort((a, b) {
             final priorityA = (a.toJson()['priority'] ?? 99) as int;
             final priorityB = (b.toJson()['priority'] ?? 99) as int;
@@ -793,15 +745,16 @@ class AnimeService {
     }
   }
 
+  // BATCH DETAIL
   Future<Map<String, dynamic>?> getBatchDetail(String batchId) async {
     try {
       if (kDebugMode) print('\n📦 Fetching batch detail: $batchId');
       
-      final response = await _safeApiCall('/batch/$batchId');
+      final response = await _safeApiCall('batch/$batchId');
       
       if (response != null && response.statusCode == 200) {
         final responseData = response.data;
-        if (responseData is Map && responseData['status'] == 'Ok') {
+        if (responseData is Map) {
           return responseData['data'];
         }
       }
@@ -812,65 +765,13 @@ class AnimeService {
     }
   }
 
+  // SERVER URL
   Future<String?> getServerUrl(String serverId) async {
     try {
-      if (kDebugMode) print('\n🎬 Fetching server URL: $serverId');
-      
-      final response = await _safeApiCall('/server/$serverId');
-      
-      if (response != null && response.statusCode == 200) {
-        final responseData = response.data;
-        if (responseData is Map && responseData['status'] == 'Ok') {
-          return responseData['data']?['url'];
-        }
-      }
+      if (kDebugMode) print('\n🎬 Server URL not available');
       return null;
     } catch (e) {
       if (kDebugMode) print('❌ Error: $e');
-      return null;
-    }
-  }
-  Future<Map<String, dynamic>?> getEpisodeDetail(String episodeId) async {
-    try {
-      String cleanEpisodeId = episodeId.trim().replaceAll(RegExp(r'^/+|/+$'), '');
-      
-      // Handle samehadaku prefix
-      if (cleanEpisodeId.startsWith('samehadaku/episode/')) {
-        cleanEpisodeId = cleanEpisodeId.replaceFirst('samehadaku/episode/', '');
-      }
-      
-      if (kDebugMode) print('🎬 SERVICE: Fetching episode detail for: $cleanEpisodeId');
-      
-      final response = await _safeApiCall('/episode/$cleanEpisodeId', maxRetries: 3);
-      
-      if (response != null && response.statusCode == 200) {
-        final responseData = response.data;
-        
-        if (responseData is Map && responseData['status'] == 'Ok') {
-          final data = responseData['data'];
-          
-          if (data != null && data is Map) {
-            if (kDebugMode) {
-              print('✅ SERVICE: Episode data received');
-              if (data['recommendedEpisodeList'] != null) {
-                final recList = data['recommendedEpisodeList'] as List;
-                print('   Recommended episodes: ${recList.length}');
-              }
-              print('   Available keys: ${data.keys.toList()}');
-            }
-            
-            return Map<String, dynamic>.from(data);
-          }
-        }
-      }
-      
-      if (kDebugMode) print('⚠️ SERVICE: Failed to get episode detail');
-      return null;
-    } catch (e, stackTrace) {
-      if (kDebugMode) {
-        print('❌ SERVICE Error in getEpisodeDetail: $e');
-        print('   Stack: ${stackTrace.toString().split('\n').take(3).join('\n')}');
-      }
       return null;
     }
   }

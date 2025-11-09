@@ -1,4 +1,4 @@
-name: iOS Build for AltStore
+name: 🍎 iOS Build for Sideloadly
 
 on:
   push:
@@ -7,116 +7,313 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-# ⭐ FIX: Add permissions for creating releases
 permissions:
   contents: write
   packages: write
 
 jobs:
   build-ios:
+    name: 📱 Build Sukinime iOS
     runs-on: macos-13
     
     steps:
-      - name: 📥 Checkout Code
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # 📥 CHECKOUT & SETUP
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: 🔧 Setup Flutter
+      - name: 🔧 Setup Flutter Environment
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.1'
           channel: 'stable'
           cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
+          cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
 
-      - name: 📦 Install Dependencies
+      - name: 📦 Install Flutter Dependencies
         run: |
+          echo "📦 Installing dependencies..."
           flutter pub get
+          echo ""
+          echo "🔍 Flutter Doctor:"
           flutter doctor -v
 
-      - name: 🛠️ Setup Xcode
+      - name: 🛠️ Setup Xcode 15.0
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '15.0'
 
       - name: 🍎 Install CocoaPods Dependencies
         run: |
+          echo "🍎 Installing iOS native dependencies..."
           cd ios
           pod install --repo-update
           cd ..
+          echo "✅ CocoaPods installation complete"
 
-      - name: 🍎 Build iOS App (Unsigned)
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # 🏗️ BUILD PROCESS
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      - name: 🏗️ Build iOS App (Unsigned for Sideloadly)
         run: |
-          # Clean previous builds
+          echo "🧹 Cleaning previous builds..."
           flutter clean
           flutter pub get
           
-          # Build iOS without code signing
+          echo ""
+          echo "🏗️ Building iOS app (Release mode - No code signing)..."
           flutter build ios --release --no-codesign
           
-          # Create Payload directory
+          echo ""
+          echo "📦 Creating IPA structure..."
           mkdir -p Payload
           
-          # Copy app bundle to Payload
+          echo "📋 Copying app bundle to Payload..."
           cp -r build/ios/iphoneos/Runner.app Payload/
           
-          # Create IPA file
-          zip -r SukiAnime-iOS.ipa Payload
+          echo "🗜️ Compressing to IPA format..."
+          zip -r Sukinime-iOS.ipa Payload
           
-          # Move to build directory
+          echo "📁 Organizing build artifacts..."
           mkdir -p build/ios/ipa
-          mv SukiAnime-iOS.ipa build/ios/ipa/
+          mv Sukinime-iOS.ipa build/ios/ipa/
+          
+          echo ""
+          echo "✅ IPA build complete!"
+          ls -lh build/ios/ipa/
 
-      - name: 📤 Upload IPA Artifact
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # 📤 UPLOAD & RELEASE
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      - name: 📤 Upload IPA as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SukiAnime-iOS-v${{ github.run_number }}
-          path: build/ios/ipa/SukiAnime-iOS.ipa
+          name: Sukinime-iOS-v${{ github.run_number }}
+          path: build/ios/ipa/Sukinime-iOS.ipa
           retention-days: 30
+          if-no-files-found: error
 
       - name: 🎉 Create GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-v1.0.${{ github.run_number }}
-          name: Suki Anime iOS v1.0.${{ github.run_number }}
+          name: 🍎 Sukinime iOS v1.0.${{ github.run_number }}
           body: |
-            ## 📱 Suki Anime - iOS Build (Unsigned)
+            # 📱 Sukinime - iOS Build (Unsigned)
             
-            ### 📥 Installation Instructions:
-            
-            **Requirements:**
-            - iPhone with iOS 12.0 or higher
-            - AltStore installed on iPhone
-            - AltServer running on Windows PC
-            - USB cable or same WiFi network
-            
-            **Steps:**
-            1. Download the `.ipa` file below
-            2. Connect iPhone to PC (USB or WiFi)
-            3. Open AltServer → Install App to [Your iPhone]
-            4. Select the downloaded IPA file
-            5. Enter your Apple ID credentials
-            6. Wait for installation to complete
-            7. Trust developer certificate:
-               - Settings → General → VPN & Device Management
-               - Tap your Apple ID → Trust
-            
-            **Important:**
-            - App expires every 7 days (free Apple ID limitation)
-            - Keep AltServer running for auto-refresh
-            - Enable Background Refresh in AltStore app
-            
-            ### 📝 Build Info:
-            - Build number: ${{ github.run_number }}
-            - Commit: ${{ github.sha }}
-            - Flutter: 3.27.1
-            - iOS Min: 12.0
+            > **⚡ Ready for Sideloadly installation!**
             
             ---
             
-            **Need help?** Open an issue on GitHub
+            ## 📥 Installation via Sideloadly
             
-          files: build/ios/ipa/SukiAnime-iOS.ipa
+            ### 📋 Requirements
+            - ✅ iPhone/iPad with **iOS 12.0** or higher
+            - ✅ **Sideloadly** installed on Windows/Mac ([Download](https://sideloadly.io))
+            - ✅ USB cable (Lightning/Type-C)
+            - ✅ Apple ID (free account works!)
+            - ✅ iTunes/Apple Devices (for Windows users)
+            
+            ### 🚀 Installation Steps
+            
+            #### 1️⃣ **Download & Prepare**
+            ```
+            📥 Download Sukinime-iOS.ipa (scroll down)
+            💻 Install Sideloadly from https://sideloadly.io
+            🔌 Connect iPhone/iPad to computer via USB
+            ```
+            
+            #### 2️⃣ **Install with Sideloadly**
+            ```
+            1. Open Sideloadly
+            2. Your device should appear automatically
+            3. Drag & drop Sukinime-iOS.ipa into Sideloadly
+            4. Enter your Apple ID email
+            5. Enter your Apple ID password (or app-specific password)
+            6. Click "Start" button
+            7. Wait for installation (~2-5 minutes)
+            ```
+            
+            #### 3️⃣ **Trust Certificate**
+            ```
+            📱 Open iPhone Settings
+            → General
+            → VPN & Device Management
+            → Find your Apple ID certificate
+            → Tap it → Trust → Trust again
+            ```
+            
+            #### 4️⃣ **Launch Sukinime** 🎉
+            ```
+            Open the app and enjoy watching anime!
+            ```
+            
+            ---
+            
+            ## ⚠️ Important Notes
+            
+            ### 🔄 App Expiration (7-Day Limitation)
+            
+            Apps installed with free Apple ID expire after **7 days**. Options:
+            
+            **Option 1: Re-sideload Every Week** (Recommended)
+            - ✅ Simply re-install using Sideloadly every 6-7 days
+            - ✅ Your watch history & settings are preserved
+            - ✅ Takes only 2-3 minutes
+            
+            **Option 2: Use Paid Apple Developer Account**
+            - 💰 $99/year Apple Developer Program
+            - ✅ Apps valid for 1 year
+            - ✅ No weekly reinstallation needed
+            
+            ### 🔐 Apple ID Security Tips
+            
+            **Two-Factor Authentication (2FA) Users:**
+            - Use **App-Specific Password** instead of main password
+            - Generate at: https://appleid.apple.com
+            - Account Security → App-Specific Passwords → Generate
+            
+            **Important:**
+            - ✅ Your Apple ID is only used for code signing
+            - ✅ Sideloadly does NOT store your credentials
+            - ✅ Your password never leaves your computer
+            
+            ### 💡 Pro Tips
+            
+            - 📅 Set a reminder for day 6 to re-sideload
+            - 🔋 Keep device connected & unlocked during installation
+            - 📶 Stable internet connection recommended
+            - 💾 Watch history is stored locally (survives re-installation)
+            - 🎯 You can have multiple sideloaded apps simultaneously
+            
+            ### 🐛 Troubleshooting
+            
+            **"Installation Failed"**
+            ```
+            ✅ Make sure device is unlocked
+            ✅ Delete old Sukinime version first
+            ✅ Restart Sideloadly
+            ✅ Try different USB port/cable
+            ✅ Update iTunes to latest version (Windows)
+            ```
+            
+            **"Untrusted Developer"**
+            ```
+            ✅ Settings → General → VPN & Device Management
+            ✅ Trust your Apple ID certificate
+            ✅ Tap twice to confirm
+            ```
+            
+            **"App Crashes on Launch"**
+            ```
+            ✅ Check iOS version (minimum 12.0+)
+            ✅ Reinstall the app via Sideloadly
+            ✅ Check internet connection
+            ✅ Restart device
+            ```
+            
+            **"Could Not Verify App"**
+            ```
+            ✅ Your device needs internet connection on first launch
+            ✅ Certificate might be expired (re-sideload)
+            ✅ Date & time must be correct
+            ```
+            
+            ---
+            
+            ## 📊 Build Information
+            
+            | Property | Value |
+            |----------|-------|
+            | 🏷️ Version | v1.0.${{ github.run_number }} |
+            | 📅 Build Date | ${{ github.event.head_commit.timestamp }} |
+            | 🔖 Commit | `${{ github.sha }}` |
+            | 🦋 Flutter | 3.27.1 |
+            | 🍎 iOS Min | 12.0 |
+            | 📦 Bundle ID | `com.sukinime.app` |
+            | 💾 IPA Size | ~50-80 MB |
+            
+            ---
+            
+            ## 🔗 Useful Links
+            
+            - 📥 [Sideloadly Official](https://sideloadly.io)
+            - 📖 [Sideloadly Guide](https://sideloadly.io/guide)
+            - 🔐 [App-Specific Passwords](https://appleid.apple.com)
+            - 💬 [Report Issues](https://github.com/${{ github.repository }}/issues)
+            - ⭐ [Star this Project](https://github.com/${{ github.repository }})
+            
+            ---
+            
+            ## 🎥 Video Tutorial
+            
+            **New to Sideloadly?** Watch this guide:
+            - [How to Use Sideloadly](https://www.youtube.com/results?search_query=how+to+use+sideloadly)
+            
+            ---
+            
+            ## ❓ FAQ
+            
+            **Q: Do I need to jailbreak?**
+            A: No! Sideloadly works on non-jailbroken devices.
+            
+            **Q: Can I use on Windows?**
+            A: Yes! Sideloadly supports both Windows and macOS.
+            
+            **Q: Will my Apple ID get banned?**
+            A: No, this is an official Apple feature for developers.
+            
+            **Q: Can I sideload on iPad?**
+            A: Yes! Works on all iOS/iPadOS devices.
+            
+            **Q: Does it work offline after installation?**
+            A: Yes, but first launch requires internet for verification.
+            
+            ---
+            
+            <div align="center">
+            
+            **Made with ❤️ for Anime Lovers**
+            
+            *Enjoy watching your favorite anime on Sukinime!* ✨
+            
+            `#Anime #iOS #Sideloadly #Flutter #OpenSource`
+            
+            </div>
+            
+          files: build/ios/ipa/Sukinime-iOS.ipa
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      # ✅ BUILD SUMMARY
+      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      - name: ✅ Build Summary
+        if: success()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ SUKINIME iOS BUILD SUCCESSFUL!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "📱 App Name: Sukinime"
+          echo "🏷️  Version: v1.0.${{ github.run_number }}"
+          echo "📦 IPA Size: $(ls -lh build/ios/ipa/Sukinime-iOS.ipa | awk '{print $5}')"
+          echo "🍎 Platform: iOS 12.0+"
+          echo "📍 Location: build/ios/ipa/Sukinime-iOS.ipa"
+          echo ""
+          echo "🎉 Ready for Sideloadly installation!"
+          echo "💡 Download from: https://sideloadly.io"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
